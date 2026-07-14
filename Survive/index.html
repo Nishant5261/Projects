@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Survive</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+	</head>
+	<body class="m-0 overflow-hidden bg-black">
+		<div id="scoreboard" class="fixed hidden mt-3 ml-3 text-sm text-white select-none">
+			<span>Score: </span>
+			<span id="scoreElement">0</span>
+		</div>
+		<div id="modal" class="fixed inset-0 flex items-center justify-center">
+			<div id="modalOverlay" class="bg-black/70 fixed inset-0 hidden"></div>
+			<div class="z-10 w-full max-w-md p-6 text-center bg-white rounded-md">
+				<p class="text-sm font-normal leading-none text-gray-700 select-none">Your Point</p>
+				<h1 id="finalScoreboard" class="mb-4 text-6xl font-bold select-none">0</h1>
+				<div>
+					<button id="startGameButton" class="hover:bg-blue-600 active:ring w-full py-3 font-semibold text-white transition-colors duration-200 ease-out bg-blue-500 rounded-full shadow">Start Game</button>
+				</div>
+			</div>
+		</div>
+		<canvas></canvas>
+
+		<!-- GSAP JavaScript Library -->
+		<script
+			type="text/javascript"
+			src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"
+			integrity="sha512-H6cPm97FAsgIKmlBA4s774vqoN24V5gSQL4yBTDOY2su2DeXZVhQPxFK4P6GPdnZqM9fg1G3cMv5wD7e6cFLZQ=="
+			crossorigin="anonymous"
+			referrerpolicy="no-referrer"
+		></script>
+
+		<!-- Tailwind Config -->
+		<script>
+			tailwind.config = {
+				theme: {
+					extend: {
+						fontFamily: {
+							sans: ['"Inter var"'],
+						},
+					},
+				},
+			};
+		</script>
+
+		<!-- JavaScript -->
+		<script type="text/javascript" src="./index.js"></script>
+	</body>
+</html>
