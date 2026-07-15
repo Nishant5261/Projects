@@ -363,7 +363,7 @@ lib_chips = [
     ("Scikit-learn", f'<img src="{DI}/scikitlearn/scikitlearn-original.svg">'),
     ("Matplotlib",   f'<img src="{DI}/matplotlib/matplotlib-original.svg">'),
     ("Streamlit",    f'<img src="{DI}/streamlit/streamlit-original.svg">'),
-    ("OpenAI API",   f'<img src="{DI}/openai/openai-original.svg">'),
+    ("OpenAI API",   f'<img src="{DI}/openai/openai-original-wordmark.svg">'),
 ]
 tool_chips = [
     ("VS Code",      f'<img src="{DI}/vscode/vscode-original.svg">'),
@@ -371,8 +371,8 @@ tool_chips = [
     ("Jupyter",      f'<img src="{DI}/jupyter/jupyter-original.svg">'),
     ("IntelliJ IDEA",f'<img src="{DI}/intellij/intellij-original.svg">'),
     ("Git",          f'<img src="{DI}/git/git-original.svg">'),
-    ("Power BI",     f'<img src="{DI}/powerbi/pwerbi-original.svg">'),
-    ("Excel",        f'<img src="{DI}/excel/excel-original.svg">'),
+    ("Power BI",     f'<img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/powerbi/powerbi-original.svg">'),
+    ("Excel",        f'<img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/excel/excel-original.svg">'),
 ]
 db_chips = [
     ("MySQL",        f'<img src="{DI}/mysql/mysql-original.svg">'),
