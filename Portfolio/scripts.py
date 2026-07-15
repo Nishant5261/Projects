@@ -44,6 +44,38 @@ PAGE_SCRIPT = """
     return url;
   }
 
+  function _setMobileMenu(open) {
+    var panel = D.getElementById('mobile-nav-panel');
+    var btn = D.getElementById('nav-menu-btn');
+    if (!panel || !btn) return;
+    panel.classList.toggle('open', open);
+    panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  D.addEventListener('click', function(e) {
+    var menuBtn = e.target.closest('#nav-menu-btn');
+    if (menuBtn) {
+      var panel = D.getElementById('mobile-nav-panel');
+      if (panel) {
+        var open = !panel.classList.contains('open');
+        _setMobileMenu(open);
+      }
+      return;
+    }
+    if (e.target.closest('.mobile-nav-link')) {
+      _setMobileMenu(false);
+      return;
+    }
+    if (D.getElementById('mobile-nav-panel') && D.getElementById('mobile-nav-panel').classList.contains('open') && !e.target.closest('.mobile-nav-panel') && !e.target.closest('.nav-bar')) {
+      _setMobileMenu(false);
+    }
+  });
+
+  W.addEventListener('resize', function() {
+    if (W.innerWidth > 900) _setMobileMenu(false);
+  });
+
   /* View-certificate buttons — event delegation on document (no element lookup needed) */
   D.addEventListener('click', function(e) {
     var btn = e.target.closest('.view-cert');

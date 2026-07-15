@@ -187,7 +187,8 @@ st.markdown(render_css(T, TA, _CSS_VARS_ACTIVE, _CSS_VARS_DARK, _CSS_VARS_LIGHT)
 st.markdown(f"""
 <nav class="nav-bar" id="nav-bar">
   <a href="#home" class="nav-brand" data-text="Nishant Giri">Nishant Giri</a>
-  <div class="nav-links">
+  <button class="nav-menu-btn" id="nav-menu-btn" title="Toggle navigation" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+  <div class="nav-links" id="nav-links">
     <a href="#home"           class="nav-link" data-section="home">Home</a>
     <a href="#skills"         class="nav-link" data-section="skills">Skills</a>
     <a href="#portfolio"      class="nav-link" data-section="portfolio">Portfolio</a>
@@ -196,6 +197,13 @@ st.markdown(f"""
     <button class="nav-theme-btn" id="nav-theme-btn" title="Switch theme" aria-label="Toggle theme">{T['toggle_icon']}</button>
   </div>
 </nav>
+<div class="mobile-nav-panel" id="mobile-nav-panel" aria-hidden="true">
+  <a href="#home" class="nav-link mobile-nav-link" data-section="home">Home</a>
+  <a href="#skills" class="nav-link mobile-nav-link" data-section="skills">Skills</a>
+  <a href="#portfolio" class="nav-link mobile-nav-link" data-section="portfolio">Portfolio</a>
+  <a href="#certifications" class="nav-link mobile-nav-link" data-section="certifications">Certifications</a>
+  <a href="#contact" class="nav-link mobile-nav-link" data-section="contact">Contact</a>
+</div>
 """, unsafe_allow_html=True)
 
 # Progress strip — fixed just below the nav, outside the nav element

@@ -355,6 +355,44 @@ a.back-to-top, a.back-to-top:visited {{
   animation:ripple 0.6s ease;
 }}
 
+/* ═══ MOBILE MENU BUTTON ═══ */
+.nav-menu-btn {{
+  display:none;
+  align-items:center;
+  justify-content:center;
+  width:38px; height:38px;
+  border-radius:50%;
+  border:1px solid {T['border']};
+  background:{T['card']};
+  color:{T['text']};
+  cursor:pointer;
+  flex-shrink:0;
+  margin-left:0.5rem;
+}}
+.nav-menu-btn:hover {{
+  border-color:{T['accent']};
+  box-shadow:0 0 0 4px {T['glow']};
+}}
+.mobile-nav-panel {{
+  display:none;
+  flex-direction:column;
+  gap:0.35rem;
+  position:fixed;
+  top:62px; left:0; right:0;
+  z-index:9998;
+  padding:0.75rem 1rem 1rem;
+  background:{T['nav_bg']};
+  backdrop-filter:blur(16px) saturate(160%);
+  -webkit-backdrop-filter:blur(16px) saturate(160%);
+  border-bottom:1px solid {TA('border','55')};
+}}
+.mobile-nav-panel.open {{ display:flex; }}
+.mobile-nav-panel .nav-link {{
+  width:100%;
+  padding:0.8rem 0.9rem;
+  border-radius:10px;
+}}
+
 /* ═══ NAV THEME BUTTON (pure HTML, inside nav) ═══ */
 .nav-theme-btn {{
   background:{T['card']};
@@ -606,12 +644,45 @@ a.back-to-top, a.back-to-top:visited {{
 }}
 /* Responsive: stack portrait above text on small screens */
 @media(max-width:900px) {{
+  .nav-bar {{ padding:0 1rem; height:58px; }}
+  .nav-links {{ display:none; }}
+  .nav-menu-btn {{ display:inline-flex; }}
+  .mobile-nav-panel {{ top:58px; }}
+  .progress-strip {{ top:58px; }}
+  .hero {{ padding:3.5rem 1rem 3rem; min-height:auto; }}
   .hero-inner    {{ flex-direction:column-reverse; gap:1rem; }}
   .hero-content  {{ text-align:center !important; max-width:none !important; }}
   .hero-subtitle {{ justify-content:center !important; }}
   .social-links  {{ justify-content:center !important; }}
   .tagline-box   {{ margin:0 auto 2rem !important; }}
-  .hero-portrait-wrap {{ width:300px; }}
+  .hero-portrait-wrap {{ width:min(280px, 70vw); }}
+  .page-section {{ padding:3.5rem 1rem; }}
+  .section-title {{ font-size:1.8rem; }}
+  .section-sub {{ font-size:0.95rem; }}
+  .stats-row {{ gap:0.8rem; }}
+  .stat-box {{ min-width:calc(50% - 0.4rem); }}
+  .skill-section-card {{ padding:1.35rem; }}
+  .skill-chip {{ font-size:0.78rem; padding:0.45rem 0.75rem; }}
+  .proj-scroll-item {{ width:220px; min-width:220px; height:300px; }}
+  .cert-scroll-item {{ min-width:240px; width:min(100%, 240px); }}
+}}
+
+@media(max-width:640px) {{
+  div[data-testid="stMainBlockContainer"] {{ padding:58px 0.9rem 0 !important; }}
+  .nav-brand {{ font-size:0.95rem; }}
+  .hero h1 {{ font-size:clamp(1.9rem, 8vw, 2.65rem); }}
+  .hero-subtitle {{ font-size:0.95rem; gap:0.35rem; }}
+  .hero-typed-wrap {{ font-size:0.92rem; min-height:2.2rem; }}
+  .social-links {{ flex-direction:column; align-items:stretch; }}
+  .social-pill {{ justify-content:center; width:100%; }}
+  .tagline-box {{ padding:0.8rem 1rem; font-size:0.86rem; }}
+  .section-header {{ margin-bottom:2.2rem; }}
+  .stat-box {{ min-width:100%; }}
+  .achievement {{ padding:1rem 1rem; gap:0.8rem; }}
+  .achievement-title {{ font-size:0.9rem; }}
+  .achievement-detail {{ font-size:0.78rem; }}
+  .scroll-controls {{ justify-content:flex-start; margin-bottom:0.5rem; }}
+  .horiz-scroll-track {{ padding:0.75rem 0.1rem 1rem; }}
 }}
 .hero-orb-1 {{
   position:absolute;
