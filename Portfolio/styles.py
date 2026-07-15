@@ -1079,10 +1079,11 @@ a.back-to-top, a.back-to-top:visited {{
   top:0; left:0; right:0; bottom:0;
   z-index:1;
   transform-style:preserve-3d;
-  transition:transform 0.45s ease-out;
+  transition:transform 0.5s cubic-bezier(.2,.8,.2,1);
+  transform-origin:center center;
   will-change:transform;
 }}
-.proj-card:hover {{
+.proj-scroll-item:hover .proj-card {{
   z-index:100;
   transform:rotateY(180deg);
 }}

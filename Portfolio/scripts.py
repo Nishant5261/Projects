@@ -267,18 +267,7 @@ PAGE_SCRIPT = """
     statNums.forEach(el => countObs.observe(el));
 
 
-    /* ═══ 8. CERT CARD TILT ═══ */
-    D.querySelectorAll('.cert-card').forEach(card => {
-      card.addEventListener('mousemove', (e) => {
-        const rect = card.getBoundingClientRect();
-        const dx = (e.clientX - rect.left - rect.width  / 2) / (rect.width  / 2);
-        const dy = (e.clientY - rect.top  - rect.height / 2) / (rect.height / 2);
-        card.style.transform = `translateY(-6px) scale(1.01) rotateX(${-dy*4}deg) rotateY(${dx*4}deg)`;
-      });
-      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
-    });
-
-    /* ═══ 9. PARTICLE CANVAS in hero ═══ */
+    /* ═══ 8. PARTICLE CANVAS in hero ═══ */
     const hero = D.querySelector('.hero');
     if (hero) {
       const canvas = D.createElement('canvas');
