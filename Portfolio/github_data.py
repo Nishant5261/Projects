@@ -17,6 +17,7 @@ Config:
 
 import os
 import re
+import json
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -291,6 +292,16 @@ def _get_json(url, params=None, timeout=7):
         return None
 
 
+def _load_local_portfolio_data():
+    """Load data from the checked-in JSON file so deployment is stable."""
+    try:
+        data_path = os.path.join(os.path.dirname(__file__), "portfolio_data.json")
+        with open(data_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────────────────────
 # Projects
 # ─────────────────────────────────────────────────────────────
@@ -492,10 +503,11 @@ def _project_from_folder(folder):
 
 
 def fetch_projects_github(max_count: int = 20):
-    """
-    Returns a list of project dicts fetched from the 'Projects' repo
-    (one dict per top-level folder), or a built-in fallback list on failure.
-    """
+    """Return projects from a local JSON file first, then fallback to GitHub data."""
+    local_data = _load_local_portfolio_data()
+    if local_data and isinstance(local_data.get("projects"), list):
+        return local_data["projects"][:max_count]
+
     try:
         url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{PROJECTS_REPO}/contents"
         items = _get_json(url)
@@ -576,10 +588,11 @@ def _cert_from_pdf(pdf_item):
 
 
 def fetch_certs_github():
-    """
-    Returns a list of cert dicts fetched from the 'certificates' repo
-    (one dict per PDF file), or a built-in fallback list on failure.
-    """
+    """Return certificates from a local JSON file first, then fallback to GitHub data."""
+    local_data = _load_local_portfolio_data()
+    if local_data and isinstance(local_data.get("certificates"), list):
+        return local_data["certificates"]
+
     try:
         url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{CERTS_REPO}/contents"
         items = _get_json(url)
