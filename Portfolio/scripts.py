@@ -34,6 +34,16 @@ PAGE_SCRIPT = """
     if (e.key === 'Escape') _closeCertModal();
   });
 
+  function _normalizeCertUrl(url) {
+    if (!url) return '';
+    url = String(url).trim();
+    if (!url) return '';
+    if (/^https?:\/\/github\.com\//i.test(url) && /\/blob\//i.test(url)) {
+      return url.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace('/blob/', '/');
+    }
+    return url;
+  }
+
   /* View-certificate buttons — event delegation on document (no element lookup needed) */
   D.addEventListener('click', function(e) {
     var btn = e.target.closest('.view-cert');
@@ -45,7 +55,12 @@ PAGE_SCRIPT = """
     if (m && f) {
       if (t) t.textContent = btn.dataset.name;
       if (l) l.style.display = 'flex';
-      f.src = 'https://docs.google.com/viewer?url=' + encodeURIComponent(btn.dataset.url) + '&embedded=true';
+      var certUrl = _normalizeCertUrl(btn.dataset.url);
+      if (/\.pdf$/i.test(certUrl)) {
+        f.src = certUrl;
+      } else {
+        f.src = 'https://docs.google.com/viewer?url=' + encodeURIComponent(certUrl) + '&embedded=true';
+      }
       m.style.display = 'flex';
       D.body.style.overflow = 'hidden';
     }
