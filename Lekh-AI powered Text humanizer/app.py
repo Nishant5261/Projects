@@ -1,7 +1,7 @@
 import streamlit as st
 
 try:
-    import google.generativeai as genai
+    from google import genai
 except ImportError:  # pragma: no cover - exercised when dependencies are missing
     genai = None
 
@@ -15,40 +15,141 @@ try:
 except ImportError:  # pragma: no cover - exercised when dependencies are missing
     docx = None
 
-import io
-import time
-
 st.set_page_config(
     page_title="AI Text Humanizer",
     page_icon="✍️",
     layout="wide",
 )
 
-st.title("✍️ AI Text Humanizer")
-st.caption("Generate AI text or upload a document, then humanize it to sound natural and bypass AI detectors.")
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: radial-gradient(circle at top left, #111827 0%, #020617 45%, #000000 100%);
+        color: #f8fafc;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+        border-right: 1px solid rgba(129, 140, 248, 0.2);
+    }
+    .hero-card {
+        background: rgba(15, 23, 42, 0.92);
+        border: 1px solid rgba(129, 140, 248, 0.25);
+        border-radius: 24px;
+        padding: 24px;
+        box-shadow: 0 18px 45px rgba(2, 6, 23, 0.45);
+        margin-bottom: 18px;
+        animation: fadeUp 0.7s ease both;
+    }
+    .hero-card h1 {
+        font-size: 2rem;
+        margin-bottom: 0.4rem;
+        color: #f8fafc;
+    }
+    .hero-card p {
+        color: #cbd5e1;
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    .pill {
+        display: inline-block;
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 10px;
+        animation: pulse 2.2s infinite;
+    }
+    .panel {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(129, 140, 248, 0.2);
+        border-radius: 18px;
+        padding: 18px;
+        box-shadow: 0 12px 32px rgba(2, 6, 23, 0.3);
+        animation: fadeUp 0.8s ease both;
+    }
+    div.stButton > button {
+        border-radius: 12px;
+        padding: 0.6rem 1rem;
+        transition: transform 180ms ease, box-shadow 180ms ease;
+    }
+    div.stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.2);
+    }
+    .stTabs [role="tab"] {
+        color: #cbd5e1;
+    }
+    .stTabs [role="tab"][aria-selected="true"] {
+        color: white;
+        background: rgba(99, 102, 241, 0.2);
+        border-radius: 10px;
+    }
+    @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.03); }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
+
+api_key = st.session_state.api_key
 
 if genai is None or PyPDF2 is None or docx is None:
     st.error("⚠️ Required dependencies are missing. Please install the packages listed in requirements.txt and reload the page.")
     st.stop()
 
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    api_key = st.text_input(
-        "Google Gemini API Key",
-        type="password",
-        placeholder="Paste your API key here",
-        help="Get a free key at https://aistudio.google.com — no credit card needed.",
-    )
-    st.markdown("[🔑 Get a free Gemini API key](https://aistudio.google.com)", unsafe_allow_html=False)
-    st.divider()
-    st.markdown("**How it works**")
+if not api_key:
     st.markdown(
-        "1. Enter your free Gemini API key above\n"
-        "2. Upload a document **or** type a prompt\n"
-        "3. Click **Humanize** to rewrite the text\n"
-        "4. Copy or download the result"
+        """
+        <div class="hero-card">
+            <span class="pill">AI Text Humanizer</span>
+            <h1>Unlock the humanizer</h1>
+            <p>Paste your Gemini API key to access the full experience. Once you’re in, you can upload documents, generate text, and humanize it with a polished, cinematic interface.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
+
+    with st.container():
+        st.markdown('<div class="panel">', unsafe_allow_html=True)
+        entered_key = st.text_input(
+            "Google Gemini API Key",
+            type="password",
+            placeholder="Paste your API key here",
+            help="Get a free key at https://aistudio.google.com — no credit card needed.",
+            label_visibility="collapsed",
+        )
+        if st.button("Continue to app", type="primary", use_container_width=True):
+            if entered_key.strip():
+                st.session_state.api_key = entered_key.strip()
+                st.rerun()
+            else:
+                st.error("Please enter your API key to continue.")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+st.title("✍️ AI Text Humanizer")
+st.caption("Generate AI text or upload a document, then humanize it to sound natural and bypass AI detectors.")
+
+with st.sidebar:
+    st.header("⚙️ Controls")
+    st.caption("Gemini key is ready")
+    if st.button("🔐 Change API key", use_container_width=True):
+        st.session_state.api_key = ""
+        st.rerun()
     st.divider()
+    st.markdown("**Humanization controls**")
     humanize_strength = st.select_slider(
         "Humanization Strength",
         options=["Light", "Moderate", "Aggressive"],
@@ -61,9 +162,16 @@ with st.sidebar:
     )
 
 
-def get_model(key: str):
-    genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-2.5-flash")
+def get_client(key: str):
+    if genai is None:
+        raise ImportError("google-genai is not installed. Please install the package from requirements.txt.")
+    return genai.Client(api_key=key)
+
+
+def generate_text(prompt: str, key: str) -> str:
+    client = get_client(key)
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+    return getattr(response, "text", "") or ""
 
 
 def extract_text_from_pdf(file) -> str:
@@ -173,12 +281,10 @@ with tab1:
 
             if st.button("🪄 Humanize Document", type="primary", use_container_width=True, key="humanize_doc"):
                 try:
-                    model = get_model(api_key)
                     prompt = build_humanize_prompt(raw_text, humanize_strength, writing_style)
 
                     with st.spinner("Humanizing your text... this may take a moment for longer documents."):
-                        response = model.generate_content(prompt)
-                        humanized = response.text
+                        humanized = generate_text(prompt, api_key)
 
                     st.divider()
                     col1, col2 = st.columns(2)
@@ -221,19 +327,15 @@ with tab2:
 
     if st.button("🚀 Generate & Humanize", type="primary", use_container_width=True, disabled=not topic.strip(), key="gen_humanize"):
         try:
-            model = get_model(api_key)
-
             with st.spinner("Step 1/2 — Generating AI text..."):
                 gen_prompt = build_generate_prompt(topic, target_words, content_type.lower())
-                gen_response = model.generate_content(gen_prompt)
-                ai_text = gen_response.text
+                ai_text = generate_text(gen_prompt, api_key)
 
             st.success("✅ AI text generated")
 
             with st.spinner("Step 2/2 — Humanizing..."):
                 humanize_prompt = build_humanize_prompt(ai_text, humanize_strength, writing_style)
-                human_response = model.generate_content(humanize_prompt)
-                humanized_text = human_response.text
+                humanized_text = generate_text(humanize_prompt, api_key)
 
             st.divider()
             col1, col2 = st.columns(2)
