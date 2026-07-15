@@ -363,7 +363,7 @@ lib_chips = [
     ("Scikit-learn", f'<img src="{DI}/scikitlearn/scikitlearn-original.svg">'),
     ("Matplotlib",   f'<img src="{DI}/matplotlib/matplotlib-original.svg">'),
     ("Streamlit",    f'<img src="{DI}/streamlit/streamlit-original.svg">'),
-    ("OpenAI API",   f'<img src="{DI}/openai/openai-original-wordmark.svg">'),
+    ("OpenAI API",   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#74AA9C" d="M22.5 10.7c0-1.5-.2-2.8-.6-4.1-.4-1.3-1-2.4-1.7-3.4-.8-1-1.8-1.8-3-2.4-1.2-.6-2.5-1-3.9-1-1.4 0-2.7.3-3.9 1-1.2.6-2.2 1.4-3 2.4-.8 1-1.4 2.1-1.7 3.4-.4 1.3-.6 2.6-.6 4.1 0 1.5.2 2.8.6 4.1.4 1.3 1 2.4 1.7 3.4.8 1 1.8 1.8 3 2.4 1.2.6 2.5 1 3.9 1 1.4 0 2.7-.3 3.9-1 1.2-.6 2.2-1.4 3-2.4.8-1 1.4-2.1 1.7-3.4.4-1.3.6-2.6.6-4.1zM12 19.4c-1.3 0-2.5-.2-3.6-.7-1.1-.4-2.1-1-2.9-1.8-.8-.8-1.5-1.8-2-2.9-.4-1.1-.7-2.3-.7-3.6 0-1.3.2-2.5.7-3.6.4-1.1 1-2.1 2-2.9.8-.8 1.8-1.5 2.9-2 .7-.3 1.5-.4 2.3-.4.5 0 1 .1 1.5.2.4.1.8.3 1.2.5.4.2.7.5 1 .8.3.3.6.6.9.9-.4.3-.8.6-1.2.9-.4.2-.8.4-1.2.6-.4.2-.8.3-1.2.3-.5 0-1-.1-1.5-.3-.6-.2-1.2-.5-1.7-.9-.6-.4-1.1-.9-1.5-1.5-.4-.6-.6-1.3-.6-2.1 0-.5.1-1 .3-1.5.2-.4.4-.8.8-1.2.3-.3.7-.6 1.1-.8.4-.2.8-.4 1.2-.5.4-.2.8-.2 1.3-.2.3 0 .6 0 .9.1.3.1.6.2.8.4.2.1.4.3.6.4.2.2.4.4.6.6.3.2.6.4.8.7.3.2.6.4.8.5.3.1.5.2.8.3.2.2.4.5.5.8.2.3.3.7.4 1.2.6.5.4 1 .9 1.5 1.3.5.4 1 .8 1.5 1.2.5.4 1 .8 1.4 1.2.4.4.8.8 1.1 1.3.3.5.6 1 .7 1.6.2.6.2 1.2.2 1.8z"/></svg>'),
 ]
 tool_chips = [
     ("VS Code",      f'<img src="{DI}/vscode/vscode-original.svg">'),
@@ -371,8 +371,8 @@ tool_chips = [
     ("Jupyter",      f'<img src="{DI}/jupyter/jupyter-original.svg">'),
     ("IntelliJ IDEA",f'<img src="{DI}/intellij/intellij-original.svg">'),
     ("Git",          f'<img src="{DI}/git/git-original.svg">'),
-    ("Power BI",     f'<img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/powerbi/powerbi-original.svg">'),
-    ("Excel",        f'<img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/excel/excel-original.svg">'),
+    ("Power BI",     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#F2C411" d="M21 3H9c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-2h2c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14H7V9h12v8zm2-4h-2V7h-8V5h10v8z"/><path fill="#F2C411" d="M10 11h2v6h-2z"/><path fill="#F2C411" d="M14 9h2v8h-2z"/><path fill="#F2C411" d="M18 7h2v10h-2z"/></svg>'),
+    ("Excel",        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#217346" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm1 17H9v-2h6v2zm0-4H9v-2h6v2zm0-4H9V9h6v2zm-1-5.2L16.2 8H13V4.8z"/></svg>'),
 ]
 db_chips = [
     ("MySQL",        f'<img src="{DI}/mysql/mysql-original.svg">'),
