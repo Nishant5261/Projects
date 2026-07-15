@@ -18,12 +18,107 @@ Config:
 import os
 import re
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # ──────────────────────────────────────────────
 GITHUB_USERNAME  = "nishant5261"
 PROJECTS_REPO    = "Projects"       # repo where each folder = one project
 CERTS_REPO       = "certificates"   # repo where PDFs = certificates
 # ──────────────────────────────────────────────
+
+_SESSION = requests.Session()
+_retry = Retry(
+    total=3,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET"],
+)
+_SESSION.mount("https://", HTTPAdapter(max_retries=_retry))
+_SESSION.mount("http://", HTTPAdapter(max_retries=_retry))
+
+_FALLBACK_PROJECTS = [
+    {
+        "title": "LEKH",
+        "role": "AI Powered Text Humanizer",
+        "desc": "LEKH is a Python program for humanizing AI text and generating natural-sounding content on specific topics.",
+        "tech": ["Python", "Streamlit", "Google.generativeai", "PyPDF2"],
+        "img": "https://placehold.co/600x300/ec4899/ffffff?text=LEKH",
+        "preview": "https://github.com/Nishant5261/Projects/tree/main/Lekh-AI%20powered%20Text%20humanizer",
+        "source": "https://github.com/Nishant5261/Projects/tree/main/Lekh-AI%20powered%20Text%20humanizer",
+        "stars": 0,
+        "has_live": False,
+    },
+    {
+        "title": "Portfolio",
+        "role": "My portfolio website",
+        "desc": "A Streamlit-based portfolio website that highlights my journey, projects, certifications, and contact details.",
+        "tech": ["Python", "Streamlit", "Requests"],
+        "img": "https://placehold.co/600x300/f59e0b/ffffff?text=Portfolio",
+        "preview": "https://github.com/Nishant5261/Projects/tree/main/Portfolio",
+        "source": "https://github.com/Nishant5261/Projects/tree/main/Portfolio",
+        "stars": 0,
+        "has_live": False,
+    },
+    {
+        "title": "SHADOW",
+        "role": "AI Powered Interview Assistant",
+        "desc": "An AI-based interview assistant that creates a non-biased interview environment and gives feedback on answers.",
+        "tech": ["Python", "Streamlit", "google.genai", "RegEx(re)"],
+        "img": "https://placehold.co/600x300/14b8a6/ffffff?text=SHADOW",
+        "preview": "https://github.com/Nishant5261/Projects/tree/main/Shadow-AI%20Interview%20System",
+        "source": "https://github.com/Nishant5261/Projects/tree/main/Shadow-AI%20Interview%20System",
+        "stars": 0,
+        "has_live": False,
+    },
+    {
+        "title": "SURVIVE",
+        "role": "Web-based shooting game",
+        "desc": "A browser-based shooting game where the player defends against incoming enemies and earns points by shooting them.",
+        "tech": ["HTML", "Javascript", "GSAP(JS)", "Tailwind"],
+        "img": "https://placehold.co/600x300/ef4444/ffffff?text=SURVIVE",
+        "preview": "https://github.com/Nishant5261/Projects/tree/main/Survive",
+        "source": "https://github.com/Nishant5261/Projects/tree/main/Survive",
+        "stars": 0,
+        "has_live": False,
+    },
+]
+
+_FALLBACK_CERTS = [
+    {
+        "logo_html": '<i class="fas fa-book" style="color:#e61e28;font-size:1.5rem;"></i>',
+        "logo_bg": "#e61e2811",
+        "name": "English Level10Expert(CEFR: C2 GSE:85 90)",
+        "issuer": "MeproPearson",
+        "status": "Certified",
+        "badge": "https://placehold.co/80x80/e61e28/ffffff?text=PR",
+        "link": "https://github.com/Nishant5261/certificates/blob/main/English_Level10Expert(CEFR:%20C2_GSE:85-90)%20by%20MeproPearson.pdf",
+        "raw_url": "https://raw.githubusercontent.com/Nishant5261/certificates/main/English_Level10Expert(CEFR:%20C2_GSE:85-90)%20by%20MeproPearson.pdf",
+        "featured": False,
+    },
+    {
+        "logo_html": '<i class="fas fa-chart-bar" style="color:#0f62fe;font-size:1.5rem;"></i>',
+        "logo_bg": "#0f62fe11",
+        "name": "SQL(basic)",
+        "issuer": "IBM",
+        "status": "Certified",
+        "badge": "https://placehold.co/80x80/0f62fe/ffffff?text=IBM",
+        "link": "https://github.com/Nishant5261/certificates/blob/main/SQL(basic)%20by%20IBM.pdf",
+        "raw_url": "https://raw.githubusercontent.com/Nishant5261/certificates/main/SQL(basic)%20by%20IBM.pdf",
+        "featured": False,
+    },
+    {
+        "logo_html": '<i class="fab fa-python" style="color:#3776ab;font-size:1.5rem;"></i>',
+        "logo_bg": "#3776ab11",
+        "name": "Python basic certificate",
+        "issuer": "",
+        "status": "Certified",
+        "badge": "https://placehold.co/80x80/3776ab/ffffff?text=PY",
+        "link": "https://github.com/Nishant5261/certificates/blob/main/python_basic%20certificate.pdf",
+        "raw_url": "https://raw.githubusercontent.com/Nishant5261/certificates/main/python_basic%20certificate.pdf",
+        "featured": False,
+    },
+]
 
 
 # ── Extension → tech label ──────────────────────────────────
@@ -175,7 +270,11 @@ _DEFAULT_CERT_STYLE = (
 
 def _headers():
     token = os.environ.get("GITHUB_TOKEN", "")
-    h = {"Accept": "application/vnd.github.v3+json", "User-Agent": "portfolio-app"}
+    h = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "portfolio-app",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     if token:
         h["Authorization"] = f"token {token}"
     return h
@@ -184,8 +283,10 @@ def _headers():
 def _get_json(url, params=None, timeout=7):
     """GET → parsed JSON, or None on error."""
     try:
-        r = requests.get(url, headers=_headers(), params=params, timeout=timeout)
-        return r.json() if r.status_code == 200 else None
+        r = _SESSION.get(url, headers=_headers(), params=params, timeout=timeout)
+        if r.status_code == 200:
+            return r.json()
+        return None
     except Exception:
         return None
 
@@ -393,17 +494,17 @@ def _project_from_folder(folder):
 def fetch_projects_github(max_count: int = 20):
     """
     Returns a list of project dicts fetched from the 'Projects' repo
-    (one dict per top-level folder), or None on failure.
+    (one dict per top-level folder), or a built-in fallback list on failure.
     """
     try:
         url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{PROJECTS_REPO}/contents"
         items = _get_json(url)
         if not items or not isinstance(items, list):
-            return None
+            return _FALLBACK_PROJECTS[:max_count]
 
         folders = [i for i in items if i.get("type") == "dir"]
         if not folders:
-            return None
+            return _FALLBACK_PROJECTS[:max_count]
 
         out = []
         for folder in folders[:max_count]:
@@ -411,9 +512,9 @@ def fetch_projects_github(max_count: int = 20):
             if proj:
                 out.append(proj)
 
-        return out or None
+        return out or _FALLBACK_PROJECTS[:max_count]
     except Exception:
-        return None
+        return _FALLBACK_PROJECTS[:max_count]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -477,18 +578,18 @@ def _cert_from_pdf(pdf_item):
 def fetch_certs_github():
     """
     Returns a list of cert dicts fetched from the 'certificates' repo
-    (one dict per PDF file), or None on failure.
+    (one dict per PDF file), or a built-in fallback list on failure.
     """
     try:
         url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{CERTS_REPO}/contents"
         items = _get_json(url)
         if not items or not isinstance(items, list):
-            return None
+            return _FALLBACK_CERTS
 
         pdfs = [i for i in items
                 if i.get("type") == "file" and i["name"].lower().endswith(".pdf")]
         if not pdfs:
-            return None
+            return _FALLBACK_CERTS
 
         out = []
         for pdf in pdfs:
@@ -496,6 +597,6 @@ def fetch_certs_github():
             if cert:
                 out.append(cert)
 
-        return out or None
+        return out or _FALLBACK_CERTS
     except Exception:
-        return None
+        return _FALLBACK_CERTS
