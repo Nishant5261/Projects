@@ -314,6 +314,18 @@ def _fetch_repo_tree_html(repo: str = PROJECTS_REPO, branch: str = "main"):
     return ""
 
 
+def _fetch_repo_contents(repo: str = PROJECTS_REPO, branch: str = "main"):
+    """Fetch repository contents from the GitHub API."""
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo}/contents/?ref={branch}"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        return []
+    return []
+
+
 def _parse_project_names_from_html(html_text):
     """Extract top-level project folder names from the repository tree HTML."""
     try:
@@ -334,7 +346,23 @@ def _build_project_from_repo_name(repo_name: str):
     safe_name = requests.utils.quote(repo_name)
     source_url = f"https://github.com/{GITHUB_USERNAME}/{PROJECTS_REPO}/tree/main/{safe_name}"
     preview_url = source_url
+
+    try:
+        for readme_name in ("README.md", "readme.md"):
+            readme_url = (
+                f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{PROJECTS_REPO}/main/{safe_name}/{readme_name}"
+            )
+            readme_resp = requests.get(readme_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if readme_resp.status_code == 200:
+                parsed = _parse_readme_fields(readme_resp.text)
+                if parsed.get("live_preview"):
+                    preview_url = _normalize_preview_url(parsed["live_preview"])
+                    break
+    except Exception:
+        pass
+
     color = _PALETTE[abs(hash(repo_name)) % len(_PALETTE)]
+    has_live = bool(preview_url and preview_url != source_url)
     return {
         "title": title,
         "role": "",
@@ -344,7 +372,7 @@ def _build_project_from_repo_name(repo_name: str):
         "preview": preview_url,
         "source": source_url,
         "stars": 0,
-        "has_live": False,
+        "has_live": has_live,
     }
 
 
@@ -385,6 +413,20 @@ def _extract_plain_desc(text):
     return ""
 
 
+def _normalize_preview_url(value):
+    """Normalize a preview URL so bare domains become clickable."""
+    if not value:
+        return value
+    value = value.strip()
+    if re.match(r"^(https?|mailto|tel):", value, re.IGNORECASE):
+        return value
+    if value.startswith("//"):
+        return f"https:{value}"
+    if re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(?:/.*)?$", value, re.IGNORECASE):
+        return f"https://{value}"
+    return value
+
+
 def _parse_readme_fields(text):
     """
     Parse structured fields from a README.
@@ -408,16 +450,23 @@ def _parse_readme_fields(text):
         r"(Name|Role|Description|Coding[\s_\-]?Language|Language|"
         r"Framework(?:[\s_\-]?Used)?|"
         r"Live[\s_\-]?Preview|Live\s+Link|Preview\s+Link|Demo|Website)"
-        r"[\*_]{0,2}\s*:+\s*(.*)",
+        r"[\*_]{0,2}\s*[:\-]\s*(.*)",
         re.IGNORECASE
     )
 
     for line in text.splitlines():
-        m = pat.match(line.strip())
+        line_stripped = line.strip()
+        m = pat.match(line_stripped)
         if not m:
-            continue
-        key_raw = m.group(1).lower()
-        raw_val = m.group(2).strip()
+            # Also support plain "Live preview: value" style lines without markdown syntax.
+            if re.search(r"^(live preview|live link|preview link|demo|website)\s*[:\-]\s*(.+)$", line_stripped, re.IGNORECASE):
+                key_raw = "live_preview"
+                raw_val = re.sub(r"^(live preview|live link|preview link|demo|website)\s*[:\-]\s*", "", line_stripped, flags=re.IGNORECASE)
+            else:
+                continue
+        else:
+            key_raw = m.group(1).lower()
+            raw_val = m.group(2).strip()
 
         # Extract markdown link [text](url) if present
         url_match = re.search(r"\[([^\]]*)\]\(([^)]+)\)", raw_val)
@@ -444,9 +493,9 @@ def _parse_readme_fields(text):
         elif any(k in key_raw for k in ("preview", "live", "demo", "link")):
             # Prefer extracted URL, else use bare value if it looks like a URL
             if link_url:
-                fields["live_preview"] = link_url
-            elif val.startswith("http"):
-                fields["live_preview"] = val
+                fields["live_preview"] = _normalize_preview_url(link_url)
+            elif val.startswith("http") or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(?:/.*)?$", val, re.IGNORECASE):
+                fields["live_preview"] = _normalize_preview_url(val)
 
     return fields
 
@@ -530,7 +579,7 @@ def _project_from_folder(folder):
         )
 
         # Preview link: use live URL from README if available
-        preview_url = parsed["live_preview"] or folder_url
+        preview_url = _normalize_preview_url(parsed["live_preview"]) or folder_url
         has_live    = bool(parsed["live_preview"])
 
         return {
@@ -550,21 +599,26 @@ def _project_from_folder(folder):
 
 def fetch_projects_github(max_count: int = 20):
     """Return projects from GitHub repository folders, with local JSON fallback."""
-    local_data = _load_local_portfolio_data()
-    if local_data and isinstance(local_data.get("projects"), list):
-        return local_data["projects"][:max_count]
+    try:
+        contents = _fetch_repo_contents(PROJECTS_REPO, "main")
+        if isinstance(contents, list):
+            names = [item.get("name") for item in contents if item.get("type") == "dir"]
+            names = [name for name in names if name and name != ".devcontainer"]
+            if names:
+                projects = []
+                for name in names[:max_count]:
+                    project = _build_project_from_repo_name(name)
+                    if project:
+                        projects.append(project)
+                if projects:
+                    return projects
+    except Exception:
+        pass
 
     try:
-        html_text = _fetch_repo_tree_html(PROJECTS_REPO, "main")
-        names = _parse_project_names_from_html(html_text)
-        if names:
-            projects = []
-            for name in names[:max_count]:
-                project = _build_project_from_repo_name(name)
-                if project:
-                    projects.append(project)
-            if projects:
-                return projects
+        local_data = _load_local_portfolio_data()
+        if local_data and isinstance(local_data.get("projects"), list):
+            return local_data["projects"][:max_count]
     except Exception:
         pass
 
