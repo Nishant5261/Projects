@@ -56,11 +56,7 @@ PAGE_SCRIPT = """
       if (t) t.textContent = btn.dataset.name;
       if (l) l.style.display = 'flex';
       var certUrl = _normalizeCertUrl(btn.dataset.url);
-      if (/\.pdf$/i.test(certUrl)) {
-        f.src = certUrl;
-      } else {
-        f.src = 'https://docs.google.com/viewer?url=' + encodeURIComponent(certUrl) + '&embedded=true';
-      }
+      f.src = 'https://docs.google.com/viewer?url=' + encodeURIComponent(certUrl) + '&embedded=true';
       m.style.display = 'flex';
       D.body.style.overflow = 'hidden';
     }
