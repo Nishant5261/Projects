@@ -1,7 +1,20 @@
 import streamlit as st
-import google.generativeai as genai
-import PyPDF2
-import docx
+
+try:
+    import google.generativeai as genai
+except ImportError:  # pragma: no cover - exercised when dependencies are missing
+    genai = None
+
+try:
+    import PyPDF2
+except ImportError:  # pragma: no cover - exercised when dependencies are missing
+    PyPDF2 = None
+
+try:
+    import docx
+except ImportError:  # pragma: no cover - exercised when dependencies are missing
+    docx = None
+
 import io
 import time
 
@@ -13,6 +26,10 @@ st.set_page_config(
 
 st.title("✍️ AI Text Humanizer")
 st.caption("Generate AI text or upload a document, then humanize it to sound natural and bypass AI detectors.")
+
+if genai is None or PyPDF2 is None or docx is None:
+    st.error("⚠️ Required dependencies are missing. Please install the packages listed in requirements.txt and reload the page.")
+    st.stop()
 
 with st.sidebar:
     st.header("⚙️ Configuration")
