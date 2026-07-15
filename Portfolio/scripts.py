@@ -266,23 +266,6 @@ PAGE_SCRIPT = """
     }, { threshold: 0.8 });
     statNums.forEach(el => countObs.observe(el));
 
-    /* ═══ 7. PROJECT CARD TILT ═══ */
-    /* Cards now expand horizontally — tilt only on the face (240px) area */
-    D.querySelectorAll('.proj-card').forEach(card => {
-      card.addEventListener('mousemove', (e) => {
-        const rect = card.getBoundingClientRect();
-        const faceW = 240;
-        const faceH = rect.height;
-        const dx = (e.clientX - rect.left - faceW / 2) / (faceW / 2);
-        const dy = (e.clientY - rect.top  - faceH / 2) / (faceH / 2);
-        card.style.setProperty('--tilt-x', `${(-dy * 4).toFixed(2)}deg`);
-        card.style.setProperty('--tilt-y', `${(dx * 4).toFixed(2)}deg`);
-      });
-      card.addEventListener('mouseleave', () => {
-        card.style.removeProperty('--tilt-x');
-        card.style.removeProperty('--tilt-y');
-      });
-    });
 
     /* ═══ 8. CERT CARD TILT ═══ */
     D.querySelectorAll('.cert-card').forEach(card => {

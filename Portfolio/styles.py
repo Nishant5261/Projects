@@ -504,7 +504,7 @@ a.back-to-top, a.back-to-top:visited {{
   height:320px;
   scroll-snap-align:start;
   position:relative;
-  perspective:1400px;
+  perspective:1000px;
 }}
 /* Cert cards — ~3 visible per full screen width */
 .cert-scroll-item {{
@@ -1079,13 +1079,12 @@ a.back-to-top, a.back-to-top:visited {{
   top:0; left:0; right:0; bottom:0;
   z-index:1;
   transform-style:preserve-3d;
-  transition:transform 0.65s cubic-bezier(.22,1,.36,1);
-  transform:rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transition:transform 0.45s ease-out;
   will-change:transform;
 }}
 .proj-card:hover {{
   z-index:100;
-  transform:rotateY(180deg) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(-8px);
+  transform:rotateY(180deg);
 }}
 
 /* ── Front face: tightly-cropped image up top, title + tech chips below ── */
