@@ -27,8 +27,14 @@ def _load_gh_projects():
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_gh_certs():
     return _fetch_certs_gh()
+
+# Resolve assets relative to this file so they work from any working directory.
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_ASSET_DIR = os.path.join(_BASE_DIR, "attached_assets")
+_PORTRAIT_FILE = os.path.join(_ASSET_DIR, "portrait_1784056692141.png")
+_PAGE_ICON_FILE = os.path.join(_ASSET_DIR, "portfolio.png")
+
 # ─── Load hero portrait (background-removed PNG → base64) ───
-_PORTRAIT_FILE = "attached_assets/portrait_1784056692141.png"
 try:
     with open(_PORTRAIT_FILE, "rb") as _pf:
         _portrait_b64 = "data:image/png;base64," + base64.b64encode(_pf.read()).decode()
@@ -40,7 +46,7 @@ except Exception:
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Nishant Giri | Portfolio",
-    page_icon="attached_assets/portfolio.png",
+    page_icon=_PAGE_ICON_FILE,
     layout="wide",
     initial_sidebar_state="collapsed",
 )
