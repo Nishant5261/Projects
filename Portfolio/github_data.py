@@ -293,13 +293,59 @@ def _get_json(url, params=None, timeout=7):
 
 
 def _load_local_portfolio_data():
-    """Load data from the checked-in JSON file so deployment is stable."""
+    """Load data from the checked-in JSON file when available."""
     try:
         data_path = os.path.join(os.path.dirname(__file__), "portfolio_data.json")
         with open(data_path, "r", encoding="utf-8") as fh:
             return json.load(fh)
     except Exception:
         return None
+
+
+def _fetch_repo_tree_html(repo: str = PROJECTS_REPO, branch: str = "main"):
+    """Fetch the public GitHub HTML page for a repository tree."""
+    try:
+        url = f"https://github.com/{GITHUB_USERNAME}/{repo}/tree/{branch}"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if r.status_code == 200:
+            return r.text
+    except Exception:
+        return ""
+    return ""
+
+
+def _parse_project_names_from_html(html_text):
+    """Extract top-level project folder names from the repository tree HTML."""
+    try:
+        pattern = rf'https://github.com/{re.escape(GITHUB_USERNAME)}/{re.escape(PROJECTS_REPO)}/tree/main/([^"?#]+)'
+        names = []
+        for match in re.finditer(pattern, html_text):
+            name = match.group(1)
+            if name and name not in names and name != ".devcontainer" and name != "readme.md":
+                names.append(name)
+        return names
+    except Exception:
+        return []
+
+
+def _build_project_from_repo_name(repo_name: str):
+    """Create a project card from a public GitHub repository directory name."""
+    title = repo_name.replace("-", " ").replace("_", " ").title()
+    safe_name = requests.utils.quote(repo_name)
+    source_url = f"https://github.com/{GITHUB_USERNAME}/{PROJECTS_REPO}/tree/main/{safe_name}"
+    preview_url = source_url
+    color = _PALETTE[abs(hash(repo_name)) % len(_PALETTE)]
+    return {
+        "title": title,
+        "role": "",
+        "desc": f"Project folder from the public {PROJECTS_REPO} repository.",
+        "tech": ["GitHub Repo"],
+        "img": f"https://placehold.co/600x300/{color}/ffffff?text={requests.utils.quote(title)}",
+        "preview": preview_url,
+        "source": source_url,
+        "stars": 0,
+        "has_live": False,
+    }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -503,10 +549,24 @@ def _project_from_folder(folder):
 
 
 def fetch_projects_github(max_count: int = 20):
-    """Return projects from a local JSON file first, then fallback to GitHub data."""
+    """Return projects from GitHub repository folders, with local JSON fallback."""
     local_data = _load_local_portfolio_data()
     if local_data and isinstance(local_data.get("projects"), list):
         return local_data["projects"][:max_count]
+
+    try:
+        html_text = _fetch_repo_tree_html(PROJECTS_REPO, "main")
+        names = _parse_project_names_from_html(html_text)
+        if names:
+            projects = []
+            for name in names[:max_count]:
+                project = _build_project_from_repo_name(name)
+                if project:
+                    projects.append(project)
+            if projects:
+                return projects
+    except Exception:
+        pass
 
     try:
         url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{PROJECTS_REPO}/contents"
@@ -588,7 +648,7 @@ def _cert_from_pdf(pdf_item):
 
 
 def fetch_certs_github():
-    """Return certificates from a local JSON file first, then fallback to GitHub data."""
+    """Return certificates from GitHub certificate files, with local JSON fallback."""
     local_data = _load_local_portfolio_data()
     if local_data and isinstance(local_data.get("certificates"), list):
         return local_data["certificates"]
