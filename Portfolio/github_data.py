@@ -342,32 +342,78 @@ def _parse_project_names_from_html(html_text):
 
 def _build_project_from_repo_name(repo_name: str):
     """Create a project card from a public GitHub repository directory name."""
-    title = repo_name.replace("-", " ").replace("_", " ").title()
+    fallback_title = repo_name.replace("-", " ").replace("_", " ").title()
     safe_name = requests.utils.quote(repo_name)
     source_url = f"https://github.com/{GITHUB_USERNAME}/{PROJECTS_REPO}/tree/main/{safe_name}"
     preview_url = source_url
 
+    parsed = {
+        "name": "",
+        "role": "",
+        "description": "",
+        "language": "",
+        "framework": "",
+        "live_preview": "",
+    }
+    files = []
+
     try:
-        for readme_name in ("README.md", "readme.md"):
-            readme_url = (
-                f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{PROJECTS_REPO}/main/{safe_name}/{readme_name}"
-            )
-            readme_resp = requests.get(readme_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        folder_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{PROJECTS_REPO}/contents/{safe_name}?ref=main"
+        files = _get_json(folder_url) or []
+        if not isinstance(files, list):
+            files = []
+
+        readme = next(
+            (f for f in files if f.get("name", "").lower().startswith("readme") and f.get("type") == "file"),
+            None,
+        )
+        if readme and readme.get("download_url"):
+            readme_resp = requests.get(readme["download_url"], headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
             if readme_resp.status_code == 200:
                 parsed = _parse_readme_fields(readme_resp.text)
+                if not parsed.get("description"):
+                    parsed["description"] = _extract_plain_desc(readme_resp.text)
                 if parsed.get("live_preview"):
                     preview_url = _normalize_preview_url(parsed["live_preview"])
-                    break
     except Exception:
         pass
+
+    title = (parsed.get("name") or fallback_title).strip()
+    desc = (parsed.get("description") or f"Project folder from the public {PROJECTS_REPO} repository.").strip()
+
+    tech = []
+    for raw in (parsed.get("language", ""), parsed.get("framework", "")):
+        for item in re.split(r"[,/&+]+", raw):
+            item = item.strip()
+            if item and item not in tech:
+                tech.append(item)
+
+    if not parsed.get("framework", "").strip():
+        req_file = next(
+            (f for f in files if f.get("name", "").lower() == "requirements.txt" and f.get("type") == "file"),
+            None,
+        )
+        if req_file and req_file.get("download_url"):
+            try:
+                req_resp = requests.get(req_file["download_url"], headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                if req_resp.status_code == 200:
+                    for fw in _detect_frameworks_from_requirements(req_resp.text):
+                        if fw not in tech:
+                            tech.append(fw)
+            except Exception:
+                pass
+
+    if not tech:
+        tech = _detect_tech_from_files([f for f in files if f.get("type") == "file"])
+    tech = tech or ["Code"]
 
     color = _PALETTE[abs(hash(repo_name)) % len(_PALETTE)]
     has_live = bool(preview_url and preview_url != source_url)
     return {
         "title": title,
-        "role": "",
-        "desc": f"Project folder from the public {PROJECTS_REPO} repository.",
-        "tech": ["GitHub Repo"],
+        "role": parsed.get("role", ""),
+        "desc": desc,
+        "tech": tech,
         "img": f"https://placehold.co/600x300/{color}/ffffff?text={requests.utils.quote(title)}",
         "preview": preview_url,
         "source": source_url,
