@@ -275,9 +275,13 @@ PAGE_SCRIPT = """
         const faceH = rect.height;
         const dx = (e.clientX - rect.left - faceW / 2) / (faceW / 2);
         const dy = (e.clientY - rect.top  - faceH / 2) / (faceH / 2);
-        card.style.transform = `translateY(-8px) rotateX(${-dy*4}deg) rotateY(${dx*4}deg)`;
+        card.style.setProperty('--tilt-x', `${(-dy * 4).toFixed(2)}deg`);
+        card.style.setProperty('--tilt-y', `${(dx * 4).toFixed(2)}deg`);
       });
-      card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+      card.addEventListener('mouseleave', () => {
+        card.style.removeProperty('--tilt-x');
+        card.style.removeProperty('--tilt-y');
+      });
     });
 
     /* ═══ 8. CERT CARD TILT ═══ */

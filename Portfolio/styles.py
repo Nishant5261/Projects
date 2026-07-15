@@ -1080,10 +1080,12 @@ a.back-to-top, a.back-to-top:visited {{
   z-index:1;
   transform-style:preserve-3d;
   transition:transform 0.65s cubic-bezier(.22,1,.36,1);
+  transform:rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  will-change:transform;
 }}
 .proj-card:hover {{
   z-index:100;
-  transform:rotateY(180deg);
+  transform:rotateY(180deg) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(-8px);
 }}
 
 /* ── Front face: tightly-cropped image up top, title + tech chips below ── */
