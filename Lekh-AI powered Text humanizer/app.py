@@ -6,6 +6,11 @@ except ImportError:  # pragma: no cover - exercised when dependencies are missin
     genai = None
 
 try:
+    import requests
+except ImportError:  # pragma: no cover - exercised when dependencies are missing
+    requests = None
+
+try:
     import PyPDF2
 except ImportError:  # pragma: no cover - exercised when dependencies are missing
     PyPDF2 = None
@@ -105,7 +110,7 @@ if "api_key" not in st.session_state:
 
 api_key = st.session_state.api_key
 
-if genai is None or PyPDF2 is None or docx is None:
+if (genai is None and requests is None) or PyPDF2 is None or docx is None:
     st.error("⚠️ Required dependencies are missing. Please install the packages listed in requirements.txt and reload the page.")
     st.stop()
 
@@ -169,9 +174,22 @@ def get_client(key: str):
 
 
 def generate_text(prompt: str, key: str) -> str:
-    client = get_client(key)
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-    return getattr(response, "text", "") or ""
+    if genai is not None:
+        client = get_client(key)
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        return getattr(response, "text", "") or ""
+
+    if requests is None:
+        raise ImportError("Gemini client dependencies are unavailable.")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    response = requests.post(url, json=payload, timeout=120)
+    response.raise_for_status()
+
+    data = response.json()
+    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    return "".join(part.get("text", "") for part in parts)
 
 
 def extract_text_from_pdf(file) -> str:
