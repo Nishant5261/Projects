@@ -79,23 +79,21 @@ if submit_button:
     # One-Hot Encode the categorical inputs
     input_encoded = pd.get_dummies(input_df)
     
-    # Align the new columns with the exact columns the model expects (fills missing with 0)
+    # Align the new columns with the exact 33 columns the scaler expects (fills missing with 0)
     input_aligned = input_encoded.reindex(columns=expected_cols, fill_value=0)
     
-    # Scale the data using the saved standard scaler
+    # Scale the data safely 
     input_scaled = scaler.transform(input_aligned.values)
     
     # Generate Predictions
-    probability_of_churn = model.predict_proba(input_scaled)[0][1] * 100
-    
-    # Custom business threshold: Flag as 'Churn Risk' if probability is over 35%
-    prediction = 1 if probability_of_churn >= 35.0 else 0
+    prediction = model.predict(input_scaled)[0]
+    probability = model.predict_proba(input_scaled)[0][1] * 100
     
     # Display the final results
     st.divider()
     if prediction == 1:
-        st.error(f"⚠️ **High Risk of Churn!** (Probability: {probability_of_churn:.2f}%)")
+        st.error(f"⚠️ **High Risk of Churn!** (Probability: {probability:.2f}%)")
         st.write("This customer exhibits behaviors closely aligning with historical churn patterns.")
     else:
-        st.success(f"✅ **Customer is Likely to Retain.** (Churn Probability: {probability_of_churn:.2f}%)")
+        st.success(f"✅ **Customer is Likely to Retain.** (Churn Probability: {probability:.2f}%)")
         st.write("This customer is showing healthy engagement metrics.")
