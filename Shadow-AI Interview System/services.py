@@ -5,7 +5,7 @@ from google.genai import types
 
 
 def get_client() -> genai.Client:
-    return genai.Client(api_key='Gemini API Key')
+    return genai.Client(api_key='API KEY')
 
 
 MODEL = "gemini-2.5-flash"
