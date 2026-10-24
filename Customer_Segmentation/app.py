@@ -99,4 +99,11 @@ if submit_button:
         'Silver (At Risk)': {
             'color': 'orange',
             'icon': '🥈',
-            'advice': "**Marketing Strategy:** Send targeted 'Win-Back' discount codes. Send personalized emails asking for feedback to prevent
+            'advice': "**Marketing Strategy:** Send targeted 'Win-Back' discount codes. Send personalized emails asking for feedback to prevent churn."
+        },
+        'Bronze (Lost/Low)': {
+            'color': 'red',
+            'icon': '🥉',
+            'advice': "**Marketing Strategy:** Deprioritize marketing spend here. Only target during major clearance sales to clear out dead inventory."
+        }
+    }
