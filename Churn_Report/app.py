@@ -2,17 +2,17 @@ import streamlit as st
 import pandas as pd
 import joblib
 import os
-
 # 1. Load the saved models and scalers efficiently
 @st.cache_resource
 def load_assets():
-    # Find the exact folder where app.py is currently located
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Attach that folder path to the filenames
+    # We only need the model and the scaler now
     model = joblib.load(os.path.join(base_dir, 'xgboost_churn_model.pkl'))
     scaler = joblib.load(os.path.join(base_dir, 'scaler.pkl'))
-    expected_cols = joblib.load(os.path.join(base_dir, 'feature_columns.pkl'))
+    
+    # BULLETPROOF FIX: Pull the exact 33 column names directly from the scaler's memory
+    expected_cols = scaler.feature_names_in_
     
     return model, scaler, expected_cols
 
