@@ -83,7 +83,7 @@ if submit_button:
     input_aligned = input_encoded.reindex(columns=expected_cols, fill_value=0)
     
     # Scale the data using the saved standard scaler
-    input_scaled = scaler.transform(input_aligned)
+    input_scaled = scaler.transform(input_aligned.values)
     
     # Generate Predictions
     probability_of_churn = model.predict_proba(input_scaled)[0][1] * 100
