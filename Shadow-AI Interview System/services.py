@@ -2,10 +2,11 @@ import re
 import json
 from google import genai
 from google.genai import types
+api_key = st.secrets["GOOGLE_API_KEY"]
 
 
 def get_client() -> genai.Client:
-    return genai.Client(api_key='API_KEY')
+    return genai.Client(api_key=api_key)
 
 
 MODEL = "gemini-2.5-flash"
