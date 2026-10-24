@@ -48,7 +48,7 @@ def predict_churn(tenure, complain, cashback, warehouse_dist, order_cat, app_hou
         return f"✅ Customer is Likely to Retain. (Churn Probability: {probability:.2f}%)"
 
 # Build the Gradio UI
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
+with gr.Blocks() as demo:
     gr.Markdown("# 🛒 E-Commerce Customer Churn Predictor")
     gr.Markdown("Enter customer details below to predict their likelihood of churning.")
     
@@ -74,4 +74,4 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         outputs=output
     )
 
-demo.launch()
+demo.launch(theme=gr.themes.Soft())
