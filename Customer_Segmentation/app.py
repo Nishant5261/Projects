@@ -58,12 +58,9 @@ with st.form("customer_input_form"):
 
 # --- 4. Prediction & Strategy Logic ---
 if submit_button:
-    # A. Format the input to match the training data exactly
-    input_data = pd.DataFrame({
-        'Recency': [recency],
-        'Frequency': [frequency],
-        'Monetary': [monetary]
-    })
+    # A. Format the input as a raw 2D NumPy array to bypass Scikit-Learn's strict name checking
+    # This prevents the silent crashes caused by Pandas column name mismatches
+    input_data = np.array([[recency, frequency, monetary]])
     
     # B. Apply Preprocessing (Log Transform -> Scale)
     input_log = np.log1p(input_data)
@@ -72,38 +69,54 @@ if submit_button:
     # C. Generate Prediction
     cluster_id = kmeans_model.predict(input_scaled)[0]
     
-    # Note: K-Means cluster IDs (0, 1, 2, 3) are assigned randomly during training. 
-    # If your specific notebook run mapped them differently based on the monetary mean, 
-    # update this dictionary to match your exact output.
+    # D. DYNAMIC CLUSTER MAPPING
+    # Inspect the trained model's mathematical centroids to find which ID represents which tier.
+    # Feature index 2 is 'Monetary'. We sort the clusters by their average spend.
+    centers = kmeans_model.cluster_centers_
+    sorted_indices = np.argsort(centers[:, 2]) 
+    
     segment_mapping = {
-        0: 'Bronze (Lost/Low)',
-        1: 'Silver (At Risk)',
-        2: 'Gold (Loyal)',
-        3: 'Platinum (Champions)'
+        sorted_indices[0]: 'Bronze (Lost/Low)',
+        sorted_indices[1]: 'Silver (At Risk)',
+        sorted_indices[2]: 'Gold (Loyal)',
+        sorted_indices[3]: 'Platinum (Champions)'
     }
     
-    predicted_segment = segment_mapping.get(cluster_id, "Unknown Segment")
+    predicted_segment = segment_mapping[cluster_id]
     
-    # D. Define the Business Strategy Dictionary
+    # E. Define the Business Strategy Dictionary
     strategy_guide = {
         'Platinum (Champions)': {
-            'color': 'blue',
             'icon': '💎',
             'advice': "**Marketing Strategy:** Do not offer discounts (they buy anyway). Offer early access to new products, VIP support, and loyalty rewards."
         },
         'Gold (Loyal)': {
-            'color': 'green',
             'icon': '🥇',
             'advice': "**Marketing Strategy:** Upsell higher-margin items. Encourage referrals with 'Bring a Friend' campaigns to leverage their loyalty."
         },
         'Silver (At Risk)': {
-            'color': 'orange',
             'icon': '🥈',
             'advice': "**Marketing Strategy:** Send targeted 'Win-Back' discount codes. Send personalized emails asking for feedback to prevent churn."
         },
         'Bronze (Lost/Low)': {
-            'color': 'red',
             'icon': '🥉',
             'advice': "**Marketing Strategy:** Deprioritize marketing spend here. Only target during major clearance sales to clear out dead inventory."
         }
     }
+    
+    # F. Display Results
+    st.divider()
+    
+    segment_info = strategy_guide[predicted_segment]
+    
+    st.markdown(f"### {segment_info['icon']} Predicted Segment: **{predicted_segment}**")
+    
+    # Display the targeted advice in a colored alert box
+    if "Platinum" in predicted_segment:
+        st.info(segment_info['advice'])
+    elif "Gold" in predicted_segment:
+        st.success(segment_info['advice'])
+    elif "Silver" in predicted_segment:
+        st.warning(segment_info['advice'])
+    else:
+        st.error(segment_info['advice'])
