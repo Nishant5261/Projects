@@ -86,14 +86,16 @@ if submit_button:
     input_scaled = scaler.transform(input_aligned)
     
     # Generate Predictions
-    prediction = model.predict(input_scaled)[0]
-    probability = model.predict_proba(input_scaled)[0][1] * 100
+    probability_of_churn = model.predict_proba(input_scaled)[0][1] * 100
+    
+    # Custom business threshold: Flag as 'Churn Risk' if probability is over 35%
+    prediction = 1 if probability_of_churn >= 35.0 else 0
     
     # Display the final results
     st.divider()
     if prediction == 1:
-        st.error(f"⚠️ **High Risk of Churn!** (Probability: {probability:.2f}%)")
+        st.error(f"⚠️ **High Risk of Churn!** (Probability: {probability_of_churn:.2f}%)")
         st.write("This customer exhibits behaviors closely aligning with historical churn patterns.")
     else:
-        st.success(f"✅ **Customer is Likely to Retain.** (Churn Probability: {probability:.2f}%)")
+        st.success(f"✅ **Customer is Likely to Retain.** (Churn Probability: {probability_of_churn:.2f}%)")
         st.write("This customer is showing healthy engagement metrics.")
