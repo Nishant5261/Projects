@@ -1,77 +1,89 @@
-import gradio as gr
+import streamlit as st
 import pandas as pd
 import joblib
 
-# Load the saved assets
-model = joblib.load('xgboost_churn_model.pkl')
-scaler = joblib.load('scaler.pkl')
-expected_cols = joblib.load('feature_columns.pkl')
+# 1. Load the saved models and scalers efficiently
+@st.cache_resource
+def load_assets():
+    model = joblib.load('xgboost_churn_model.pkl')
+    scaler = joblib.load('scaler.pkl')
+    expected_cols = joblib.load('feature_columns.pkl')
+    return model, scaler, expected_cols
 
-def predict_churn(tenure, complain, cashback, warehouse_dist, order_cat, app_hours, order_count, satisfaction):
-    # Map 'Yes'/'No' to 1/0
+model, scaler, expected_cols = load_assets()
+
+# 2. Set up the Streamlit UI
+st.set_page_config(page_title="Customer Churn Predictor", layout="centered")
+st.title("🛒 E-Commerce Customer Churn Predictor")
+st.write("Enter customer details below to predict their likelihood of churning.")
+
+# 3. Create the input form
+with st.form("prediction_form"):
+    st.subheader("Customer Behavior & Metrics")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        tenure = st.number_input("Tenure (Months)", min_value=0, max_value=100, value=5)
+        complain = st.selectbox("Logged a Complaint?", ["No", "Yes"])
+        cashback = st.number_input("Average Cashback Amount ($)", min_value=0.0, max_value=500.0, value=150.0)
+        warehouse_dist = st.number_input("Distance from Warehouse", min_value=1, max_value=100, value=15)
+    
+    with col2:
+        order_cat = st.selectbox("Preferred Order Category", ['Laptop & Accessory', 'Mobile Phone', 'Fashion', 'Grocery', 'Others'])
+        app_hours = st.number_input("Hours Spent on App", min_value=0, max_value=24, value=3)
+        order_count = st.number_input("Total Order Count", min_value=1, max_value=50, value=4)
+        satisfaction = st.slider("Satisfaction Score", 1, 5, 3)
+
+    submit_button = st.form_submit_button("Predict Churn Risk")
+
+# 4. Process the Input and Predict
+if submit_button:
+    # Map text input to binary
     complain_val = 1 if complain == "Yes" else 0
     
+    # Reconstruct the expected dataset structure (filling unasked features with EDA medians)
     input_data = {
         'Tenure': tenure,
         'WarehouseToHome': warehouse_dist,
         'HourSpendOnApp': app_hours,
-        'OrderAmountHikeFromlastYear': 15,
-        'DaySinceLastOrder': 3,
-        'CouponUsed': 1,
+        'OrderAmountHikeFromlastYear': 15, 
+        'DaySinceLastOrder': 3,            
+        'CouponUsed': 1,                   
         'OrderCount': order_count,
         'Complain': complain_val,
         'CashbackAmount': cashback,
         'SatisfactionScore': satisfaction,
         'PreferedOrderCat': order_cat,
-        'PreferredLoginDevice': 'Mobile',
-        'PreferredPaymentMode': 'Credit Card',
-        'MaritalStatus': 'Married',
-        'CityTier': 1,
-        'Gender': 'Male',
-        'NumberOfAddress': 2,
-        'NumberOfDeviceRegistered': 3
+        'PreferredLoginDevice': 'Mobile',  
+        'PreferredPaymentMode': 'Credit Card', 
+        'MaritalStatus': 'Married',        
+        'CityTier': 1,                     
+        'Gender': 'Male',                  
+        'NumberOfAddress': 2,              
+        'NumberOfDeviceRegistered': 3      
     }
     
-    # Process and align data
+    # Convert to DataFrame
     input_df = pd.DataFrame([input_data])
+    
+    # One-Hot Encode the categorical inputs
     input_encoded = pd.get_dummies(input_df)
+    
+    # Align the new columns with the exact columns the model expects (fills missing with 0)
     input_aligned = input_encoded.reindex(columns=expected_cols, fill_value=0)
+    
+    # Scale the data using the saved standard scaler
     input_scaled = scaler.transform(input_aligned)
     
-    # Predict
+    # Generate Predictions
     prediction = model.predict(input_scaled)[0]
     probability = model.predict_proba(input_scaled)[0][1] * 100
     
+    # Display the final results
+    st.divider()
     if prediction == 1:
-        return f"⚠️ High Risk of Churn! (Probability: {probability:.2f}%)"
+        st.error(f"⚠️ **High Risk of Churn!** (Probability: {probability:.2f}%)")
+        st.write("This customer exhibits behaviors closely aligning with historical churn patterns.")
     else:
-        return f"✅ Customer is Likely to Retain. (Churn Probability: {probability:.2f}%)"
-
-# Build the Gradio UI
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# 🛒 E-Commerce Customer Churn Predictor")
-    gr.Markdown("Enter customer details below to predict their likelihood of churning.")
-    
-    with gr.Row():
-        with gr.Column():
-            tenure = gr.Number(label="Tenure (Months)", value=5, minimum=0, maximum=100)
-            complain = gr.Radio(["No", "Yes"], label="Logged a Complaint?", value="No")
-            cashback = gr.Number(label="Average Cashback Amount ($)", value=150, minimum=0)
-            warehouse_dist = gr.Number(label="Distance from Warehouse", value=15, minimum=1)
-        
-        with gr.Column():
-            order_cat = gr.Dropdown(['Laptop & Accessory', 'Mobile Phone', 'Fashion', 'Grocery', 'Others'], label="Preferred Order Category", value="Laptop & Accessory")
-            app_hours = gr.Number(label="Hours Spent on App", value=3, minimum=0, maximum=24)
-            order_count = gr.Number(label="Total Order Count", value=4, minimum=1)
-            satisfaction = gr.Slider(minimum=1, maximum=5, step=1, label="Satisfaction Score", value=3)
-            
-    submit_btn = gr.Button("Predict Churn Risk", variant="primary")
-    output = gr.Textbox(label="Prediction Result")
-    
-    submit_btn.click(
-        fn=predict_churn,
-        inputs=[tenure, complain, cashback, warehouse_dist, order_cat, app_hours, order_count, satisfaction],
-        outputs=output
-    )
-
-demo.launch()
+        st.success(f"✅ **Customer is Likely to Retain.** (Churn Probability: {probability:.2f}%)")
+        st.write("This customer is showing healthy engagement metrics.")
