@@ -59,7 +59,6 @@ with st.form("customer_input_form"):
 # --- 4. Prediction & Strategy Logic ---
 if submit_button:
     # A. Format the input as a raw 2D NumPy array to bypass Scikit-Learn's strict name checking
-    # This prevents the silent crashes caused by Pandas column name mismatches
     input_data = np.array([[recency, frequency, monetary]])
     
     # B. Apply Preprocessing (Log Transform -> Scale)
@@ -70,18 +69,19 @@ if submit_button:
     cluster_id = kmeans_model.predict(input_scaled)[0]
     
     # D. DYNAMIC CLUSTER MAPPING
-    # Inspect the trained model's mathematical centroids to find which ID represents which tier.
-    # Feature index 2 is 'Monetary'. We sort the clusters by their average spend.
+    # Inspect the trained model to see exactly how many clusters it created
     centers = kmeans_model.cluster_centers_
-    sorted_indices = np.argsort(centers[:, 2]) 
+    sorted_indices = np.argsort(centers[:, 2]) # Sort by Monetary (Index 2)
+    n_clusters = len(sorted_indices)
     
-    segment_mapping = {
-        sorted_indices[0]: 'Bronze (Lost/Low)',
-        sorted_indices[1]: 'Silver (At Risk)',
-        sorted_indices[2]: 'Gold (Loyal)',
-        sorted_indices[3]: 'Platinum (Champions)'
-    }
-    
+    # Dynamically assign tiers based on the number of clusters (handling 3 or 4)
+    if n_clusters == 3:
+        tier_labels = ['Bronze (Lost/Low)', 'Gold (Loyal)', 'Platinum (Champions)']
+    else:
+        tier_labels = ['Bronze (Lost/Low)', 'Silver (At Risk)', 'Gold (Loyal)', 'Platinum (Champions)']
+        
+    # Map the model's randomly assigned ID to the sorted tier
+    segment_mapping = {sorted_indices[i]: tier_labels[i] for i in range(n_clusters)}
     predicted_segment = segment_mapping[cluster_id]
     
     # E. Define the Business Strategy Dictionary
