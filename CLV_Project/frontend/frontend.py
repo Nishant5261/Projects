@@ -5,7 +5,7 @@ st.set_page_config(page_title="CLV Forecaster", layout="centered")
 st.title("📈 CLV Forecaster Dashboard")
 st.write("Enter the customer's behavioral metrics to predict their 12-month future revenue.")
 
-API_URL = "http://http://13.201.185.7:8000//predict_clv"
+API_URL = "http://13.201.185.7:8000/predict_clv"
 
 with st.form("clv_form"):
     st.subheader("Temporal Features")
