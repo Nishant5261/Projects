@@ -6,7 +6,7 @@ st.title("🎯 Causal ML: Marketing Uplift Optimizer")
 st.write("Identifies the true causal impact of marketing interventions to eliminate wasted ad spend.")
 
 # Replace with your AWS EC2 Public IPv4
-API_URL = "http://YOUR-EC2-IP:8000/predict_uplift"
+API_URL = "http://13.201.185.7:5000/predict_uplift"
 
 with st.sidebar.form("customer_data"):
     st.header("Customer Profile")
