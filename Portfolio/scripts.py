@@ -1,20 +1,27 @@
 """
-Client-side JavaScript for the portfolio page: nav/scroll effects, theme
-toggle, typing animation, particle canvas, certificate modal, card tap-flip, etc.
+Client-side JavaScript for the portfolio page.
+Includes a MutationObserver to ensure Streamlit's async DOM is fully loaded.
 """
 
 PAGE_SCRIPT = """
 <script>
 (function() {
-  var W = (window.parent && window.parent !== window) ? window.parent : window;
-  var D = W.document;
+  /* Safely bridge to the main Streamlit window */
+  var W = window;
+  var D = document;
+  try {
+    if (window.parent && window.parent.document) {
+      W = window.parent;
+      D = window.parent.document;
+    }
+  } catch (e) {
+    console.warn("Cannot access parent document.");
+  }
+
   var IO = W.IntersectionObserver || IntersectionObserver;
 
-  /* Mark body so CSS can safely hide .reveal elements */
-  if (D.body) D.body.classList.add('js-ready');
-
-  /* Sync initial data-theme attribute on <html> from URL or theme button icon */
-  (function syncInitialTheme() {
+  /* Sync initial data-theme */
+  function syncInitialTheme() {
     var root = D.documentElement;
     if (!root.getAttribute('data-theme')) {
       var qp = new URLSearchParams(W.location.search).get('theme');
@@ -26,11 +33,10 @@ PAGE_SCRIPT = """
         root.setAttribute('data-theme', isDark ? 'dark' : 'light');
       }
     }
-  })();
+  }
+  syncInitialTheme();
 
-  /* ══════════════════════════════════════════════════════
-     CERTIFICATE MODAL — close helper
-  ══════════════════════════════════════════════════════ */
+  /* Modal Helpers */
   function _closeCertModal() {
     var m = D.getElementById('cert-modal');
     var f = D.getElementById('cert-modal-iframe');
@@ -72,8 +78,7 @@ PAGE_SCRIPT = """
     if (menuBtn) {
       var panel = D.getElementById('mobile-nav-panel');
       if (panel) {
-        var open = !panel.classList.contains('open');
-        _setMobileMenu(open);
+        _setMobileMenu(!panel.classList.contains('open'));
       }
       return;
     }
@@ -85,6 +90,7 @@ PAGE_SCRIPT = """
       _setMobileMenu(false);
     }
 
+    /* Tap-to-flip for projects */
     var projItem = e.target.closest('.proj-scroll-item');
     if (projItem && !e.target.closest('a')) {
       projItem.classList.toggle('is-flipped');
@@ -93,27 +99,38 @@ PAGE_SCRIPT = """
         el.classList.remove('is-flipped');
       });
     }
+
+    /* Modal interactions */
+    var viewBtn = e.target.closest('.view-cert');
+    if (viewBtn) {
+      var m = D.getElementById('cert-modal');
+      var f = D.getElementById('cert-modal-iframe');
+      var t = D.getElementById('cert-modal-title');
+      var l = D.getElementById('cert-modal-loading');
+      if (m && f) {
+        if (t) t.textContent = viewBtn.dataset.name;
+        if (l) l.style.display = 'flex';
+        var certUrl = _normalizeCertUrl(viewBtn.dataset.url);
+        f.src = 'https://docs.google.com/viewer?url=' + encodeURIComponent(certUrl) + '&embedded=true';
+        m.style.display = 'flex';
+        if (D.body) D.body.style.overflow = 'hidden';
+      }
+    }
+    
+    /* Scroll Arrows */
+    var arrowBtn = e.target.closest('.scroll-arrow-btn');
+    if (arrowBtn && arrowBtn.dataset.track) {
+      var track = D.getElementById(arrowBtn.dataset.track);
+      if (track) {
+        var item = track.querySelector('.proj-scroll-item,.cert-scroll-item');
+        var cardW = item ? (item.offsetWidth + 20) : 290;
+        track.scrollBy({ left: parseInt(arrowBtn.dataset.dir) * cardW * 2, behavior: 'smooth' });
+      }
+    }
   });
 
   W.addEventListener('resize', function() {
     if (W.innerWidth > 900) _setMobileMenu(false);
-  });
-
-  D.addEventListener('click', function(e) {
-    var btn = e.target.closest('.view-cert');
-    if (!btn) return;
-    var m = D.getElementById('cert-modal');
-    var f = D.getElementById('cert-modal-iframe');
-    var t = D.getElementById('cert-modal-title');
-    var l = D.getElementById('cert-modal-loading');
-    if (m && f) {
-      if (t) t.textContent = btn.dataset.name;
-      if (l) l.style.display = 'flex';
-      var certUrl = _normalizeCertUrl(btn.dataset.url);
-      f.src = 'https://docs.google.com/viewer?url=' + encodeURIComponent(certUrl) + '&embedded=true';
-      m.style.display = 'flex';
-      if (D.body) D.body.style.overflow = 'hidden';
-    }
   });
 
   function _updateTrackArrows(trackId) {
@@ -126,18 +143,10 @@ PAGE_SCRIPT = """
     if (rightBtn) rightBtn.disabled = track.scrollLeft >= maxScroll - 4;
   }
 
-  D.addEventListener('click', function(e) {
-    var btn = e.target.closest('.scroll-arrow-btn');
-    if (!btn || !btn.dataset.track) return;
-    var track = D.getElementById(btn.dataset.track);
-    if (!track) return;
-    var item = track.querySelector('.proj-scroll-item,.cert-scroll-item');
-    var cardW = item ? (item.offsetWidth + 20) : 290;
-    track.scrollBy({ left: parseInt(btn.dataset.dir) * cardW * 2, behavior: 'smooth' });
-  });
-
-  /* ── Robust Initialization with Polling for Streamlit Elements ── */
+  /* ── Core Initializer ── */
   function init() {
+    if (D.body) D.body.classList.add('js-ready');
+
     ['proj-track', 'cert-track'].forEach(function(tid) {
       var tr = D.getElementById(tid);
       if (tr) {
@@ -145,12 +154,8 @@ PAGE_SCRIPT = """
         _updateTrackArrows(tid);
       }
     });
-    W.addEventListener('resize', function() {
-      _updateTrackArrows('proj-track');
-      _updateTrackArrows('cert-track');
-    });
 
-    /* Theme toggle */
+    /* Theme toggle listener */
     var _themeBtn = D.getElementById('nav-theme-btn');
     if (_themeBtn && !_themeBtn.dataset.bound) {
       _themeBtn.dataset.bound = '1';
@@ -160,7 +165,6 @@ PAGE_SCRIPT = """
         var next = current === 'light' ? 'dark' : 'light';
         root.setAttribute('data-theme', next);
         _themeBtn.textContent = next === 'dark' ? '☀️' : '🌙';
-
         var p = new URLSearchParams(W.location.search);
         p.set('theme', next);
         W.history.replaceState({}, '', W.location.pathname + '?' + p.toString());
@@ -185,7 +189,7 @@ PAGE_SCRIPT = """
       });
     }
 
-    /* ═══ 1. TYPING ANIMATION ═══ */
+    /* 1. TYPING ANIMATION */
     const phrases = [
       "Building AI-powered applications",
       "Turning data into insights",
@@ -212,7 +216,7 @@ PAGE_SCRIPT = """
       typeStep();
     }
 
-    /* ═══ 2. SCROLL-REVEAL ═══ */
+    /* 2. SCROLL-REVEAL */
     const _scrollRoot = D.querySelector('[data-testid="stAppViewContainer"]') || null;
     const _revealIO = new IO(
       function(entries) {
@@ -225,12 +229,14 @@ PAGE_SCRIPT = """
       },
       { root: _scrollRoot, rootMargin: '0px 0px -6% 0px', threshold: 0.06 }
     );
-    D.querySelectorAll('.reveal,.reveal-left,.reveal-right,.reveal-scale')
-      .forEach(function(el) { _revealIO.observe(el); });
+    D.querySelectorAll('.reveal,.reveal-left,.reveal-right,.reveal-scale').forEach(function(elm) { 
+        _revealIO.observe(elm); 
+    });
 
-    /* ═══ 3. SCI-FI PROGRESS BAR + NAV ACTIVE (With Polling for DOM readiness) ═══ */
+    /* 3. SCI-FI PROGRESS BAR & NAV HIGHLIGHTING */
     const SECTION_IDS = ['home','skills','portfolio','certifications','contact'];
     const navLinks = D.querySelectorAll('.nav-link');
+    const fill  = D.getElementById('scifi-bar-fill');
     const TRIGGER = 120;
     const last = SECTION_IDS.length - 1;
 
@@ -260,11 +266,9 @@ PAGE_SCRIPT = """
     }
 
     function barLoop() {
-      const fill = D.getElementById('scifi-bar-fill');
       if (fill) {
         const { pct, cur } = calcBar();
         _barTarget = pct;
-
         const diff = _barTarget - _barCurrent;
         _barCurrent += diff * 0.2;
         if (Math.abs(diff) < 0.01) _barCurrent = _barTarget;
@@ -274,16 +278,18 @@ PAGE_SCRIPT = """
         if (cur !== _lastSec) {
           _lastSec = cur;
           navLinks.forEach(function(link) {
-            link.classList.toggle('active',
-              link.dataset.section === SECTION_IDS[cur]);
+            link.classList.toggle('active', link.dataset.section === SECTION_IDS[cur]);
           });
         }
       }
       W.requestAnimationFrame(barLoop);
     }
-    W.requestAnimationFrame(barLoop);
+    if (fill && !fill.dataset.bound) {
+        fill.dataset.bound = '1';
+        W.requestAnimationFrame(barLoop);
+    }
 
-    /* ═══ 4. NAV LINK RIPPLE ═══ */
+    /* 4. NAV RIPPLES */
     navLinks.forEach(link => {
       if (link.dataset.rippleBound) return;
       link.dataset.rippleBound = '1';
@@ -299,20 +305,18 @@ PAGE_SCRIPT = """
       });
     });
 
-    /* ═══ 5. BACK TO TOP BUTTON ═══ */
+    /* 5. BACK TO TOP */
     const btt = D.getElementById('back-to-top');
-    if (btt) {
-      const scrollEl = D.querySelector('[data-testid="stAppViewContainer"]')
-                     || D.querySelector('section.main')
-                     || W;
-      const checkScroll = () => {
+    if (btt && !btt.dataset.bound) {
+      btt.dataset.bound = '1';
+      const scrollEl = D.querySelector('[data-testid="stAppViewContainer"]') || W;
+      scrollEl.addEventListener('scroll', () => {
         const st = scrollEl === W ? W.pageYOffset : scrollEl.scrollTop;
         btt.classList.toggle('visible', st > 350);
-      };
-      scrollEl.addEventListener('scroll', checkScroll, { passive: true });
+      }, { passive: true });
     }
 
-    /* ═══ 6. STAT NUMBER COUNTER ═══ */
+    /* 6. STAT COUNTERS */
     const statNums = D.querySelectorAll('.stat-num');
     const countObs = new IO((entries) => {
       entries.forEach(e => {
@@ -333,72 +337,70 @@ PAGE_SCRIPT = """
     }, { threshold: 0.8 });
     statNums.forEach(el => countObs.observe(el));
 
-    /* ═══ 7. THEME-AWARE PARTICLE CANVAS (Polling for .hero element) ═══ */
-    function setupParticles() {
-      const hero = D.querySelector('.hero');
-      if (hero && !D.getElementById('particles-canvas')) {
-        const canvas = D.createElement('canvas');
-        canvas.id = 'particles-canvas';
-        hero.insertBefore(canvas, hero.firstChild);
-        const ctx = canvas.getContext('2d');
-        let particles = [];
-        function resize() { canvas.width = hero.offsetWidth; canvas.height = hero.offsetHeight; }
-        resize();
-        W.addEventListener('resize', () => { resize(); spawnParticles(); });
-        function spawnParticles() {
-          particles = [];
-          const count = Math.floor(canvas.width / 18);
-          for (let i = 0; i < count; i++) {
-            particles.push({
-              x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-              r: Math.random() * 2 + 0.5,
-              vx: (Math.random() - 0.5) * 0.4, vy: -(Math.random() * 0.6 + 0.2),
-              opacity: Math.random() * 0.5 + 0.1,
-            });
-          }
-        }
-        spawnParticles();
-        function drawParticles() {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          const isLight = D.documentElement.getAttribute('data-theme') === 'light';
-          const pColor = isLight ? 'rgba(79,70,229,' : 'rgba(121,192,255,';
-          particles.forEach(p => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-            ctx.fillStyle = pColor + p.opacity + ')';
-            ctx.fill();
-            p.x += p.vx; p.y += p.vy;
-            if (p.y < -5) { p.y = canvas.height + 5; p.x = Math.random() * canvas.width; }
-            if (p.x < 0) p.x = canvas.width;
-            if (p.x > canvas.width) p.x = 0;
+    /* 7. PARTICLES */
+    const hero = D.querySelector('.hero');
+    if (hero && !D.getElementById('particles-canvas')) {
+      const canvas = D.createElement('canvas');
+      canvas.id = 'particles-canvas';
+      hero.insertBefore(canvas, hero.firstChild);
+      const ctx = canvas.getContext('2d');
+      let particles = [];
+      function resize() { canvas.width = hero.offsetWidth; canvas.height = hero.offsetHeight; }
+      resize();
+      W.addEventListener('resize', () => { resize(); spawnParticles(); });
+      function spawnParticles() {
+        particles = [];
+        const count = Math.floor(canvas.width / 18);
+        for (let i = 0; i < count; i++) {
+          particles.push({
+            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+            r: Math.random() * 2 + 0.5,
+            vx: (Math.random() - 0.5) * 0.4, vy: -(Math.random() * 0.6 + 0.2),
+            opacity: Math.random() * 0.5 + 0.1,
           });
-          W.requestAnimationFrame(drawParticles);
         }
-        drawParticles();
-        return true;
       }
-      return false;
-    }
-
-    /* Retry until hero renders if Streamlit delays DOM insertion */
-    if (!setupParticles()) {
-      var tries = 0;
-      var pollInterval = setInterval(function() {
-        tries++;
-        if (setupParticles() || tries > 20) {
-          clearInterval(pollInterval);
-        }
-      }, 250);
+      spawnParticles();
+      function drawParticles() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const isLight = D.documentElement.getAttribute('data-theme') === 'light';
+        const pColor = isLight ? 'rgba(79,70,229,' : 'rgba(121,192,255,';
+        particles.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = pColor + p.opacity + ')';
+          ctx.fill();
+          p.x += p.vx; p.y += p.vy;
+          if (p.y < -5) { p.y = canvas.height + 5; p.x = Math.random() * canvas.width; }
+          if (p.x < 0) p.x = canvas.width;
+          if (p.x > canvas.width) p.x = 0;
+        });
+        W.requestAnimationFrame(drawParticles);
+      }
+      drawParticles();
     }
   }
 
-  /* Trigger init with multi-stage fallbacks for Streamlit render timing */
-  if (D.readyState === 'complete') {
-    setTimeout(init, 100);
-  } else {
-    W.addEventListener('load', function() { setTimeout(init, 100); });
-    setTimeout(init, 600);
+  /* ── MutationObserver waits for Streamlit to finish rendering ── */
+  function tryInit() {
+    var h = D.querySelector('.hero');
+    var f = D.getElementById('scifi-bar-fill');
+    if (h && f) {
+      init();
+      return true;
+    }
+    return false;
   }
+
+  if (!tryInit()) {
+    var obs = new MutationObserver(function() {
+      if (tryInit()) obs.disconnect();
+    });
+    if (D.body) {
+        obs.observe(D.body, { childList: true, subtree: true });
+    }
+  }
+
 })();
 </script>
 """
