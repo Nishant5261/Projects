@@ -1,44 +1,58 @@
 """
 Client-side JavaScript for the portfolio page: nav/scroll effects, theme
-toggle, typing animation, particle canvas, certificate modal, etc.
-
-Split out of app.py to keep page layout/content separate from behavior.
-This is plain JS with no Python interpolation, so it is just a constant —
-pass it straight to st.html(PAGE_SCRIPT, unsafe_allow_javascript=True).
+toggle, typing animation, particle canvas, certificate modal, card tap-flip, etc.
 """
 
 PAGE_SCRIPT = """
 <script>
 (function() {
-  /* st.html() with unsafe_allow_javascript=True renders inline in the
-     main page — document IS the Streamlit app's document, no parent needed. */
-  var D = document;
-  var W = window;
+  var W = (window.parent && window.parent !== window) ? window.parent : window;
+  var D = W.document;
+  var IO = W.IntersectionObserver || IntersectionObserver;
 
   /* Mark body so CSS can safely hide .reveal elements */
-  D.body.classList.add('js-ready');
+  if (D.body) D.body.classList.add('js-ready');
+
+  /* Sync initial data-theme attribute on <html> from URL or theme button icon */
+  (function syncInitialTheme() {
+    var root = D.documentElement;
+    if (!root.getAttribute('data-theme')) {
+      var qp = new URLSearchParams(W.location.search).get('theme');
+      if (qp === 'light' || qp === 'dark') {
+        root.setAttribute('data-theme', qp);
+      } else {
+        var btn = D.getElementById('nav-theme-btn');
+        var isDark = !btn || btn.textContent.indexOf('☀️') !== -1;
+        root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      }
+    }
+  })();
 
   /* ══════════════════════════════════════════════════════
-     CERTIFICATE MODAL — close helper (defined early for keydown)
+     CERTIFICATE MODAL — close helper
   ══════════════════════════════════════════════════════ */
   function _closeCertModal() {
     var m = D.getElementById('cert-modal');
     var f = D.getElementById('cert-modal-iframe');
     if (m) m.style.display = 'none';
     if (f) f.src = '';
-    D.body.style.overflow = '';
+    if (D.body) D.body.style.overflow = '';
   }
 
-  /* Escape key — safe to register on document immediately */
   D.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') _closeCertModal();
+    if (e.key === 'Escape') {
+      _closeCertModal();
+      D.querySelectorAll('.proj-scroll-item.is-flipped').forEach(function(item) {
+        item.classList.remove('is-flipped');
+      });
+    }
   });
 
   function _normalizeCertUrl(url) {
     if (!url) return '';
     url = String(url).trim();
     if (!url) return '';
-    if (/^https?:\/\/github\.com\//i.test(url) && /\/blob\//i.test(url)) {
+    if (/^https?:\\/\\/github\\.com\\//i.test(url) && /\\/blob\\//i.test(url)) {
       return url.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace('/blob/', '/');
     }
     return url;
@@ -70,13 +84,21 @@ PAGE_SCRIPT = """
     if (D.getElementById('mobile-nav-panel') && D.getElementById('mobile-nav-panel').classList.contains('open') && !e.target.closest('.mobile-nav-panel') && !e.target.closest('.nav-bar')) {
       _setMobileMenu(false);
     }
+
+    var projItem = e.target.closest('.proj-scroll-item');
+    if (projItem && !e.target.closest('a')) {
+      projItem.classList.toggle('is-flipped');
+    } else if (!projItem) {
+      D.querySelectorAll('.proj-scroll-item.is-flipped').forEach(function(el) {
+        el.classList.remove('is-flipped');
+      });
+    }
   });
 
   W.addEventListener('resize', function() {
     if (W.innerWidth > 900) _setMobileMenu(false);
   });
 
-  /* View-certificate buttons — event delegation on document (no element lookup needed) */
   D.addEventListener('click', function(e) {
     var btn = e.target.closest('.view-cert');
     if (!btn) return;
@@ -90,11 +112,20 @@ PAGE_SCRIPT = """
       var certUrl = _normalizeCertUrl(btn.dataset.url);
       f.src = 'https://docs.google.com/viewer?url=' + encodeURIComponent(certUrl) + '&embedded=true';
       m.style.display = 'flex';
-      D.body.style.overflow = 'hidden';
+      if (D.body) D.body.style.overflow = 'hidden';
     }
   });
 
-  /* Horizontal scroll arrows — event delegation on document */
+  function _updateTrackArrows(trackId) {
+    var track = D.getElementById(trackId);
+    if (!track) return;
+    var leftBtn = D.querySelector('.scroll-arrow-btn[data-track="' + trackId + '"][data-dir="-1"]');
+    var rightBtn = D.querySelector('.scroll-arrow-btn[data-track="' + trackId + '"][data-dir="1"]');
+    var maxScroll = track.scrollWidth - track.clientWidth;
+    if (leftBtn) leftBtn.disabled = track.scrollLeft <= 4;
+    if (rightBtn) rightBtn.disabled = track.scrollLeft >= maxScroll - 4;
+  }
+
   D.addEventListener('click', function(e) {
     var btn = e.target.closest('.scroll-arrow-btn');
     if (!btn || !btn.dataset.track) return;
@@ -105,37 +136,40 @@ PAGE_SCRIPT = """
     track.scrollBy({ left: parseInt(btn.dataset.dir) * cardW * 2, behavior: 'smooth' });
   });
 
-  /* ── Wait for Streamlit to finish mounting ── */
+  /* ── Robust Initialization with Polling for Streamlit Elements ── */
   function init() {
-
-    /* ═══ 0. ELEMENT-SPECIFIC LISTENERS (need DOM to be ready) ═══ */
+    ['proj-track', 'cert-track'].forEach(function(tid) {
+      var tr = D.getElementById(tid);
+      if (tr) {
+        tr.addEventListener('scroll', function() { _updateTrackArrows(tid); }, { passive: true });
+        _updateTrackArrows(tid);
+      }
+    });
+    W.addEventListener('resize', function() {
+      _updateTrackArrows('proj-track');
+      _updateTrackArrows('cert-track');
+    });
 
     /* Theme toggle */
     var _themeBtn = D.getElementById('nav-theme-btn');
-    if (_themeBtn) {
+    if (_themeBtn && !_themeBtn.dataset.bound) {
+      _themeBtn.dataset.bound = '1';
       _themeBtn.addEventListener('click', function() {
-        /* Instant, purely client-side theme switch: flip the data-theme
-           attribute (all colors are CSS vars keyed off it — see the
-           :root[data-theme] rules) and swap the icon. No Streamlit rerun,
-           no navigation, no network round-trip — just a style recalc. */
         var root = D.documentElement;
-        var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+        var current = root.getAttribute('data-theme') || 'dark';
+        var next = current === 'light' ? 'dark' : 'light';
         root.setAttribute('data-theme', next);
         _themeBtn.textContent = next === 'dark' ? '☀️' : '🌙';
 
-        /* Keep the URL in sync (for shareable/refreshable links) without
-           triggering any rerun or navigation. */
-        var p = new URLSearchParams(location.search);
+        var p = new URLSearchParams(W.location.search);
         p.set('theme', next);
-        window.history.replaceState({}, '', location.pathname + '?' + p.toString());
+        W.history.replaceState({}, '', W.location.pathname + '?' + p.toString());
       });
     }
 
-    /* Modal close button */
     var _closeBtn = D.getElementById('cert-modal-close');
     if (_closeBtn) _closeBtn.addEventListener('click', _closeCertModal);
 
-    /* Modal backdrop click */
     var _modal = D.getElementById('cert-modal');
     if (_modal) {
       _modal.addEventListener('click', function(e) {
@@ -143,7 +177,6 @@ PAGE_SCRIPT = """
       });
     }
 
-    /* iframe onload — hide spinner */
     var _certIframe = D.getElementById('cert-modal-iframe');
     if (_certIframe) {
       _certIframe.addEventListener('load', function() {
@@ -157,11 +190,12 @@ PAGE_SCRIPT = """
       "Building AI-powered applications",
       "Turning data into insights",
       "Creating elegant Python solutions",
-      "Exploring Machine Learning",
+      "Exploring Machine Learning & LLMs",
       "Crafting seamless user experiences",
     ];
     const el = D.getElementById('typed-text');
-    if (el) {
+    if (el && !el.dataset.bound) {
+      el.dataset.bound = '1';
       let pi = 0, ci = 0, deleting = false;
       function typeStep() {
         const phrase = phrases[pi];
@@ -180,7 +214,7 @@ PAGE_SCRIPT = """
 
     /* ═══ 2. SCROLL-REVEAL ═══ */
     const _scrollRoot = D.querySelector('[data-testid="stAppViewContainer"]') || null;
-    const _revealIO = new IntersectionObserver(
+    const _revealIO = new IO(
       function(entries) {
         entries.forEach(function(e) {
           if (e.isIntersecting) {
@@ -194,20 +228,11 @@ PAGE_SCRIPT = """
     D.querySelectorAll('.reveal,.reveal-left,.reveal-right,.reveal-scale')
       .forEach(function(el) { _revealIO.observe(el); });
 
-    /* ═══ 3. SCI-FI PROGRESS BAR + NAV ACTIVE ═══ */
-    const SECTION_IDS    = ['home','skills','portfolio','certifications','contact'];
-    const SECTION_LABELS = ['HOME','SKILLS','PROJECTS','CERTS','CONTACT'];
+    /* ═══ 3. SCI-FI PROGRESS BAR + NAV ACTIVE (With Polling for DOM readiness) ═══ */
+    const SECTION_IDS = ['home','skills','portfolio','certifications','contact'];
     const navLinks = D.querySelectorAll('.nav-link');
-    const fill  = D.getElementById('scifi-bar-fill');
-    const track = D.getElementById('scifi-bar-track');
-
-
-    /* ── rAF progress bar: pure getBoundingClientRect — no scroll-container guessing ──
-       How it works: section tops move UP (go negative) as the user scrolls DOWN.
-       A section is "active" when its top <= TRIGGER px from viewport top.
-       Segment progress = how far we've scrolled through the gap to the next section. ── */
-    const TRIGGER    = 120;   /* px from viewport top that makes a section "active" */
-    const last       = SECTION_IDS.length - 1;
+    const TRIGGER = 120;
+    const last = SECTION_IDS.length - 1;
 
     let _barTarget  = 0;
     let _barCurrent = 0;
@@ -216,15 +241,14 @@ PAGE_SCRIPT = """
     function calcBar() {
       let cur = 0, seg = 0;
       for (let i = last; i >= 0; i--) {
-        const el = D.getElementById(SECTION_IDS[i]);
-        if (!el) continue;
-        const top = el.getBoundingClientRect().top;
+        const sectEl = D.getElementById(SECTION_IDS[i]);
+        if (!sectEl) continue;
+        const top = sectEl.getBoundingClientRect().top;
         if (top <= TRIGGER) {
           cur = i;
           if (i < last) {
             const nxt = D.getElementById(SECTION_IDS[i + 1]);
             if (nxt) {
-              /* gap = distance between adjacent section tops (constant while scrolling) */
               const gap = Math.max(nxt.getBoundingClientRect().top - top, 1);
               seg = Math.min(Math.max((TRIGGER - top) / gap, 0), 1);
             }
@@ -236,18 +260,17 @@ PAGE_SCRIPT = """
     }
 
     function barLoop() {
+      const fill = D.getElementById('scifi-bar-fill');
       if (fill) {
         const { pct, cur } = calcBar();
         _barTarget = pct;
 
-        /* Lerp toward target — feels instant on slow scroll, smooth on fast */
         const diff = _barTarget - _barCurrent;
         _barCurrent += diff * 0.2;
         if (Math.abs(diff) < 0.01) _barCurrent = _barTarget;
 
         fill.style.width = _barCurrent.toFixed(3) + '%';
 
-        /* Update nav only when section changes */
         if (cur !== _lastSec) {
           _lastSec = cur;
           navLinks.forEach(function(link) {
@@ -258,11 +281,12 @@ PAGE_SCRIPT = """
       }
       W.requestAnimationFrame(barLoop);
     }
-
     W.requestAnimationFrame(barLoop);
 
     /* ═══ 4. NAV LINK RIPPLE ═══ */
     navLinks.forEach(link => {
+      if (link.dataset.rippleBound) return;
+      link.dataset.rippleBound = '1';
       link.addEventListener('click', function(e) {
         const ripple = D.createElement('span');
         const rect = this.getBoundingClientRect();
@@ -290,7 +314,7 @@ PAGE_SCRIPT = """
 
     /* ═══ 6. STAT NUMBER COUNTER ═══ */
     const statNums = D.querySelectorAll('.stat-num');
-    const countObs = new IntersectionObserver((entries) => {
+    const countObs = new IO((entries) => {
       entries.forEach(e => {
         if (!e.isIntersecting) return;
         const el = e.target;
@@ -309,52 +333,72 @@ PAGE_SCRIPT = """
     }, { threshold: 0.8 });
     statNums.forEach(el => countObs.observe(el));
 
-
-    /* ═══ 8. PARTICLE CANVAS in hero ═══ */
-    const hero = D.querySelector('.hero');
-    if (hero) {
-      const canvas = D.createElement('canvas');
-      canvas.id = 'particles-canvas';
-      hero.insertBefore(canvas, hero.firstChild);
-      const ctx = canvas.getContext('2d');
-      const pColor = 'rgba(121,192,255,';
-      let particles = [];
-      function resize() { canvas.width = hero.offsetWidth; canvas.height = hero.offsetHeight; }
-      resize();
-      W.addEventListener('resize', () => { resize(); spawnParticles(); });
-      function spawnParticles() {
-        particles = [];
-        const count = Math.floor(canvas.width / 18);
-        for (let i = 0; i < count; i++) {
-          particles.push({
-            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-            r: Math.random() * 2 + 0.5,
-            vx: (Math.random() - 0.5) * 0.4, vy: -(Math.random() * 0.6 + 0.2),
-            opacity: Math.random() * 0.5 + 0.1,
-          });
+    /* ═══ 7. THEME-AWARE PARTICLE CANVAS (Polling for .hero element) ═══ */
+    function setupParticles() {
+      const hero = D.querySelector('.hero');
+      if (hero && !D.getElementById('particles-canvas')) {
+        const canvas = D.createElement('canvas');
+        canvas.id = 'particles-canvas';
+        hero.insertBefore(canvas, hero.firstChild);
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        function resize() { canvas.width = hero.offsetWidth; canvas.height = hero.offsetHeight; }
+        resize();
+        W.addEventListener('resize', () => { resize(); spawnParticles(); });
+        function spawnParticles() {
+          particles = [];
+          const count = Math.floor(canvas.width / 18);
+          for (let i = 0; i < count; i++) {
+            particles.push({
+              x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+              r: Math.random() * 2 + 0.5,
+              vx: (Math.random() - 0.5) * 0.4, vy: -(Math.random() * 0.6 + 0.2),
+              opacity: Math.random() * 0.5 + 0.1,
+            });
+          }
         }
+        spawnParticles();
+        function drawParticles() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          const isLight = D.documentElement.getAttribute('data-theme') === 'light';
+          const pColor = isLight ? 'rgba(79,70,229,' : 'rgba(121,192,255,';
+          particles.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fillStyle = pColor + p.opacity + ')';
+            ctx.fill();
+            p.x += p.vx; p.y += p.vy;
+            if (p.y < -5) { p.y = canvas.height + 5; p.x = Math.random() * canvas.width; }
+            if (p.x < 0) p.x = canvas.width;
+            if (p.x > canvas.width) p.x = 0;
+          });
+          W.requestAnimationFrame(drawParticles);
+        }
+        drawParticles();
+        return true;
       }
-      spawnParticles();
-      function drawParticles() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        particles.forEach(p => {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-          ctx.fillStyle = pColor + p.opacity + ')';
-          ctx.fill();
-          p.x += p.vx; p.y += p.vy;
-          if (p.y < -5) { p.y = canvas.height + 5; p.x = Math.random() * canvas.width; }
-          if (p.x < 0) p.x = canvas.width;
-          if (p.x > canvas.width) p.x = 0;
-        });
-        requestAnimationFrame(drawParticles);
-      }
-      drawParticles();
+      return false;
+    }
+
+    /* Retry until hero renders if Streamlit delays DOM insertion */
+    if (!setupParticles()) {
+      var tries = 0;
+      var pollInterval = setInterval(function() {
+        tries++;
+        if (setupParticles() || tries > 20) {
+          clearInterval(pollInterval);
+        }
+      }, 250);
     }
   }
 
-  /* Run after Streamlit mounts */
-  setTimeout(init, 600);
+  /* Trigger init with multi-stage fallbacks for Streamlit render timing */
+  if (D.readyState === 'complete') {
+    setTimeout(init, 100);
+  } else {
+    W.addEventListener('load', function() { setTimeout(init, 100); });
+    setTimeout(init, 600);
+  }
 })();
 </script>
 """
