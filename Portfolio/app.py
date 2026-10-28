@@ -865,4 +865,5 @@ st.markdown(f"""
 # JavaScript: Scroll effects, nav active, typing, particles
 # Injected via st.html() so scripts actually execute.
 # ─────────────────────────────────────────────────────────────
-st.html(PAGE_SCRIPT, unsafe_allow_javascript=True)
+import streamlit.components.v1 as components
+components.html(PAGE_SCRIPT, height=0, width=0)
