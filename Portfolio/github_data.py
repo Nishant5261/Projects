@@ -1,24 +1,19 @@
 """
 GitHub data fetcher for the portfolio.
 
-Projects  → fetched as sub-folders from the 'Projects' repo.
-            Each top-level folder is treated as one project.
-            README is parsed for: Name, Role, Description, Language, Framework,
-            and Live Preview link. Tech stack falls back to file-extension detection.
+Projects  → fetched dynamically on every reload from the 'Projects' repo.
+            Uses Git Trees API + raw.githubusercontent.com with cache-busting
+            so README and requirements.txt fetches never exhaust REST API limits.
 
-Certs     → fetched as PDF files from the 'certificates' repo.
-            Filename format expected: "Cert Name by Issuer.pdf"
-            (the " by " split extracts issuer; works without it too).
-
-Config:
-  • GITHUB_USERNAME — set to your GitHub username below.
-  • GITHUB_TOKEN    — optional env-var for higher API rate-limits (60 → 5000 req/hr).
+Certs     → fetched dynamically as PDF files from the 'certificates' repo.
 """
 
 import os
 import re
+import time
 import json
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -30,13 +25,13 @@ CERTS_REPO       = "certificates"   # repo where PDFs = certificates
 
 _SESSION = requests.Session()
 _retry = Retry(
-    total=3,
-    backoff_factor=0.5,
+    total=2,
+    backoff_factor=0.3,
     status_forcelist=[429, 500, 502, 503, 504],
     allowed_methods=["GET"],
 )
-_SESSION.mount("https://", HTTPAdapter(max_retries=_retry))
-_SESSION.mount("http://", HTTPAdapter(max_retries=_retry))
+_SESSION.mount("https://", HTTPAdapter(max_retries=_retry, pool_maxsize=16))
+_SESSION.mount("http://", HTTPAdapter(max_retries=_retry, pool_maxsize=16))
 
 _FALLBACK_PROJECTS = [
     {
@@ -121,8 +116,6 @@ _FALLBACK_CERTS = [
     },
 ]
 
-
-# ── Extension → tech label ──────────────────────────────────
 _EXT_TECH = {
     ".py":    "Python",
     ".ipynb": "Jupyter",
@@ -156,20 +149,23 @@ _FILE_TECH = {
     "pom.xml":          "Java",
 }
 
-# ── requirements.txt package → display label ─────────────────
-# Ordered so the first match per category wins (most specific first)
 _REQUIREMENTS_FRAMEWORKS = [
     ("tensorflow",    "TensorFlow"),
     ("torch",         "PyTorch"),
     ("keras",         "Keras"),
     ("transformers",  "HuggingFace"),
     ("langchain",     "LangChain"),
+    ("google-generativeai", "Google GenAI"),
+    ("google.generativeai", "Google GenAI"),
+    ("google-genai",  "Google GenAI"),
     ("openai",        "OpenAI API"),
     ("anthropic",     "Anthropic"),
     ("sklearn",       "Scikit-learn"),
     ("scikit-learn",  "Scikit-learn"),
     ("xgboost",       "XGBoost"),
     ("lightgbm",      "LightGBM"),
+    ("optuna",        "Optuna"),
+    ("polars",        "Polars"),
     ("fastapi",       "FastAPI"),
     ("flask",         "Flask"),
     ("django",        "Django"),
@@ -186,6 +182,8 @@ _REQUIREMENTS_FRAMEWORKS = [
     ("opencv",        "OpenCV"),
     ("PIL",           "Pillow"),
     ("pillow",        "Pillow"),
+    ("pypdf2",        "PyPDF2"),
+    ("pypdf",         "PyPDF"),
     ("sqlalchemy",    "SQLAlchemy"),
     ("pymysql",       "MySQL"),
     ("psycopg2",      "PostgreSQL"),
@@ -206,6 +204,7 @@ _REQUIREMENTS_FRAMEWORKS = [
     ("faiss",         "FAISS"),
     ("chromadb",      "ChromaDB"),
     ("pinecone",      "Pinecone"),
+    ("networkx",      "NetworkX"),
     ("twilio",        "Twilio"),
     ("boto3",         "AWS SDK"),
     ("google-cloud",  "GCP"),
@@ -220,16 +219,14 @@ def _detect_frameworks_from_requirements(text):
     for pkg, label in _REQUIREMENTS_FRAMEWORKS:
         if label in seen:
             continue
-        # Match: package name at start of line (ignoring ==, >=, etc.)
         if re.search(r"(?:^|[^a-zA-Z0-9_-])" + re.escape(pkg.lower()), text_lower, re.MULTILINE):
             seen.add(label)
             found.append(label)
     return found
 
-# ── Palette for project placeholder images ───────────────────
+
 _PALETTE = ["6366f1", "0ea5e9", "10b981", "f59e0b", "ef4444", "8b5cf6", "ec4899", "14b8a6"]
 
-# ── Issuer → (icon_html, logo_bg, badge_color, badge_text) ──
 _ISSUER_STYLE = {
     "ibm":        ('<i class="fas fa-chart-bar" style="color:#0f62fe;font-size:1.5rem;"></i>',   "#0f62fe11", "0f62fe", "IBM"),
     "google":     ('<i class="fab fa-google" style="color:#4285f4;font-size:1.5rem;"></i>',       "#4285f411", "4285f4", "GG"),
@@ -244,7 +241,6 @@ _ISSUER_STYLE = {
     "hackerrank": ('<i class="fab fa-hackerrank" style="color:#2ec866;font-size:1.5rem;"></i>',   "#2ec86611", "2ec866", "HR"),
 }
 
-# ── Keyword → style for certs without a clear issuer ─────────
 _CERT_KEYWORD_STYLE = {
     "python":     ('<i class="fab fa-python" style="color:#3776ab;font-size:1.5rem;"></i>',      "#3776ab11", "3776ab", "PY"),
     "sql":        ('<i class="fas fa-database" style="color:#0ea5e9;font-size:1.5rem;"></i>',     "#0ea5e911", "0ea5e9", "SQL"),
@@ -266,25 +262,41 @@ _DEFAULT_CERT_STYLE = (
 
 
 # ─────────────────────────────────────────────────────────────
-# Shared
+# Shared Helpers (Token + Cache-Busting)
 # ─────────────────────────────────────────────────────────────
 
-def _headers():
-    token = os.environ.get("GITHUB_TOKEN", "")
+def _get_token():
+    token=os.environ.get("GITHUB_TOKEN", "").strip()
+    if not token:
+        try:
+            import streamlit as st
+            token = str(st.secrets.get("GITHUB_TOKEN", "")).strip()
+        except Exception:
+            token = 7 
+    return token
+
+
+def _headers(api=True):
+    token = _get_token()
     h = {
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "portfolio-app",
-        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Nishant-Portfolio-App",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
     }
+    if api:
+        h["Accept"] = "application/vnd.github+json"
+        h["X-GitHub-Api-Version"] = "2022-11-28"
     if token:
-        h["Authorization"] = f"token {token}"
+        h["Authorization"] = f"Bearer {token}"
     return h
 
 
-def _get_json(url, params=None, timeout=7):
-    """GET → parsed JSON, or None on error."""
+def _get_json(url, params=None, timeout=8):
+    """GET → parsed JSON with cache-busting timestamp, or None on error."""
     try:
-        r = _SESSION.get(url, headers=_headers(), params=params, timeout=timeout)
+        q = dict(params or {})
+        q["_cb"] = int(time.time() * 1000)
+        r = _SESSION.get(url, headers=_headers(api=True), params=q, timeout=timeout)
         if r.status_code == 200:
             return r.json()
         return None
@@ -292,145 +304,106 @@ def _get_json(url, params=None, timeout=7):
         return None
 
 
+def _get_raw_text(repo: str, path: str, branch: str = "main", timeout=6):
+    """Fetch raw file text from raw.githubusercontent.com (does not use REST API quota)."""
+    try:
+        safe_path = "/".join(requests.utils.quote(part) for part in path.split("/"))
+        raw_url = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{repo}/{branch}/{safe_path}"
+        r = _SESSION.get(
+            raw_url,
+            headers=_headers(api=False),
+            params={"_cb": int(time.time() * 1000)},
+            timeout=timeout,
+        )
+        if r.status_code == 200:
+            return r.text
+    except Exception:
+        pass
+    return None
+
+
 def _load_local_portfolio_data():
     """Load data from the checked-in JSON file when available."""
     try:
-        data_path = os.path.join(os.path.dirname(__file__), "portfolio_data.json")
+        data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "portfolio_data.json")
         with open(data_path, "r", encoding="utf-8") as fh:
             return json.load(fh)
     except Exception:
         return None
 
 
-def _fetch_repo_tree_html(repo: str = PROJECTS_REPO, branch: str = "main"):
-    """Fetch the public GitHub HTML page for a repository tree."""
+def _fetch_repo_tree_single_call(repo: str = PROJECTS_REPO, branch: str = "main"):
+    """
+    Fetch the entire repository file tree in ONE single GitHub API request.
+    Falls back to /contents or public HTML parsing if rate-limited.
+    Returns (dict_of_folders_to_filenames, is_live_bool).
+    """
+    # 1. Single-call Git Tree API (1 request for all folders & files)
+    tree_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo}/git/trees/{branch}"
+    data = _get_json(tree_url, params={"recursive": "1"})
+    if data and isinstance(data.get("tree"), list):
+        folders = {}
+        for item in data["tree"]:
+            path = item.get("path", "")
+            itype = item.get("type", "")
+            if not path or path.startswith("."):
+                continue
+            parts = path.split("/")
+            top = parts[0]
+            if len(parts) == 1 and itype == "tree":
+                folders.setdefault(top, [])
+            elif len(parts) >= 2 and top != ".devcontainer":
+                folders.setdefault(top, [])
+                if len(parts) == 2 and itype == "blob":
+                    folders[top].append(parts[1])
+        if folders:
+            return folders, True
+
+    # 2. Fallback to top-level /contents API
+    contents_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo}/contents"
+    items = _get_json(contents_url, params={"ref": branch})
+    if isinstance(items, list):
+        folders = {}
+        for item in items:
+            name = item.get("name", "")
+            if item.get("type") == "dir" and name and name != ".devcontainer":
+                folders[name] = []
+        if folders:
+            return folders, True
+
+    # 3. Fallback to scraping public GitHub HTML page (0 API quota used)
     try:
-        url = f"https://github.com/{GITHUB_USERNAME}/{repo}/tree/{branch}"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        if r.status_code == 200:
-            return r.text
-    except Exception:
-        return ""
-    return ""
-
-
-def _fetch_repo_contents(repo: str = PROJECTS_REPO, branch: str = "main"):
-    """Fetch repository contents from the GitHub API."""
-    try:
-        url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo}/contents/?ref={branch}"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        return []
-    return []
-
-
-def _parse_project_names_from_html(html_text):
-    """Extract top-level project folder names from the repository tree HTML."""
-    try:
-        pattern = rf'https://github.com/{re.escape(GITHUB_USERNAME)}/{re.escape(PROJECTS_REPO)}/tree/main/([^"?#]+)'
-        names = []
-        for match in re.finditer(pattern, html_text):
-            name = match.group(1)
-            if name and name not in names and name != ".devcontainer" and name != "readme.md":
-                names.append(name)
-        return names
-    except Exception:
-        return []
-
-
-def _build_project_from_repo_name(repo_name: str):
-    """Create a project card from a public GitHub repository directory name."""
-    fallback_title = repo_name.replace("-", " ").replace("_", " ").title()
-    safe_name = requests.utils.quote(repo_name)
-    source_url = f"https://github.com/{GITHUB_USERNAME}/{PROJECTS_REPO}/tree/main/{safe_name}"
-    preview_url = source_url
-
-    parsed = {
-        "name": "",
-        "role": "",
-        "description": "",
-        "language": "",
-        "framework": "",
-        "live_preview": "",
-    }
-    files = []
-
-    try:
-        folder_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{PROJECTS_REPO}/contents/{safe_name}?ref=main"
-        files = _get_json(folder_url) or []
-        if not isinstance(files, list):
-            files = []
-
-        readme = next(
-            (f for f in files if f.get("name", "").lower().startswith("readme") and f.get("type") == "file"),
-            None,
+        html_url = f"https://github.com/{GITHUB_USERNAME}/{repo}/tree/{branch}"
+        r = _SESSION.get(
+            html_url,
+            headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"},
+            params={"_cb": int(time.time() * 1000)},
+            timeout=10,
         )
-        if readme and readme.get("download_url"):
-            readme_resp = requests.get(readme["download_url"], headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-            if readme_resp.status_code == 200:
-                parsed = _parse_readme_fields(readme_resp.text)
-                if not parsed.get("description"):
-                    parsed["description"] = _extract_plain_desc(readme_resp.text)
-                if parsed.get("live_preview"):
-                    preview_url = _normalize_preview_url(parsed["live_preview"])
+        if r.status_code == 200:
+            pattern = rf'/{re.escape(GITHUB_USERNAME)}/{re.escape(repo)}/tree/{re.escape(branch)}/([^"?#/]+)'
+            folders = {}
+            for match in re.finditer(pattern, r.text):
+                name = requests.utils.unquote(match.group(1)).strip()
+                if name and name not in (".devcontainer", "readme.md", "README.md"):
+                    folders.setdefault(name, [])
+            if folders:
+                return folders, True
     except Exception:
         pass
 
-    title = (parsed.get("name") or fallback_title).strip()
-    desc = (parsed.get("description") or f"Project folder from the public {PROJECTS_REPO} repository.").strip()
-
-    tech = []
-    for raw in (parsed.get("language", ""), parsed.get("framework", "")):
-        for item in re.split(r"[,/&+]+", raw):
-            item = item.strip()
-            if item and item not in tech:
-                tech.append(item)
-
-    if not parsed.get("framework", "").strip():
-        req_file = next(
-            (f for f in files if f.get("name", "").lower() == "requirements.txt" and f.get("type") == "file"),
-            None,
-        )
-        if req_file and req_file.get("download_url"):
-            try:
-                req_resp = requests.get(req_file["download_url"], headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                if req_resp.status_code == 200:
-                    for fw in _detect_frameworks_from_requirements(req_resp.text):
-                        if fw not in tech:
-                            tech.append(fw)
-            except Exception:
-                pass
-
-    if not tech:
-        tech = _detect_tech_from_files([f for f in files if f.get("type") == "file"])
-    tech = tech or ["Code"]
-
-    color = _PALETTE[abs(hash(repo_name)) % len(_PALETTE)]
-    has_live = bool(preview_url and preview_url != source_url)
-    return {
-        "title": title,
-        "role": parsed.get("role", ""),
-        "desc": desc,
-        "tech": tech,
-        "img": f"https://placehold.co/600x300/{color}/ffffff?text={requests.utils.quote(title)}",
-        "preview": preview_url,
-        "source": source_url,
-        "stars": 0,
-        "has_live": has_live,
-    }
+    return {}, False
 
 
 # ─────────────────────────────────────────────────────────────
 # Projects
 # ─────────────────────────────────────────────────────────────
 
-def _detect_tech_from_files(file_list):
+def _detect_tech_from_filenames(filenames):
     """Return a deduplicated list of tech labels inferred from filenames."""
     seen, out = set(), []
-    for f in file_list:
-        name_lower = f["name"].lower()
+    for fname in filenames:
+        name_lower = fname.lower()
         label = _FILE_TECH.get(name_lower)
         if not label:
             ext = os.path.splitext(name_lower)[1]
@@ -476,13 +449,6 @@ def _normalize_preview_url(value):
 def _parse_readme_fields(text):
     """
     Parse structured fields from a README.
-    Handles patterns like:
-      **Name:** My Project
-      **Role:** ML Engineer
-      - **Language**: Python
-      Live Preview: https://...
-      [View Live](https://...)
-
     Returns dict with keys: name, role, description, language, framework, live_preview
     """
     fields = {
@@ -490,7 +456,6 @@ def _parse_readme_fields(text):
         "language": "", "framework": "", "live_preview": ""
     }
 
-    # Match: optional list-marker + optional bold/italic + field label + colon + value
     pat = re.compile(
         r"^[-\*\s]*[\*_]{0,2}"
         r"(Name|Role|Description|Coding[\s_\-]?Language|Language|"
@@ -504,7 +469,6 @@ def _parse_readme_fields(text):
         line_stripped = line.strip()
         m = pat.match(line_stripped)
         if not m:
-            # Also support plain "Live preview: value" style lines without markdown syntax.
             if re.search(r"^(live preview|live link|preview link|demo|website)\s*[:\-]\s*(.+)$", line_stripped, re.IGNORECASE):
                 key_raw = "live_preview"
                 raw_val = re.sub(r"^(live preview|live link|preview link|demo|website)\s*[:\-]\s*", "", line_stripped, flags=re.IGNORECASE)
@@ -514,7 +478,6 @@ def _parse_readme_fields(text):
             key_raw = m.group(1).lower()
             raw_val = m.group(2).strip()
 
-        # Extract markdown link [text](url) if present
         url_match = re.search(r"\[([^\]]*)\]\(([^)]+)\)", raw_val)
         if url_match:
             link_text = url_match.group(1)
@@ -523,7 +486,6 @@ def _parse_readme_fields(text):
             link_text = raw_val
             link_url  = ""
 
-        # Strip markdown formatting for the text value
         val = re.sub(r"[\*_]{1,2}|`", "", link_text).strip()
 
         if "name" in key_raw:
@@ -537,7 +499,6 @@ def _parse_readme_fields(text):
         elif "frame" in key_raw:
             fields["framework"] = val
         elif any(k in key_raw for k in ("preview", "live", "demo", "link")):
-            # Prefer extracted URL, else use bare value if it looks like a URL
             if link_url:
                 fields["live_preview"] = _normalize_preview_url(link_url)
             elif val.startswith("http") or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(?:/.*)?$", val, re.IGNORECASE):
@@ -546,147 +507,104 @@ def _parse_readme_fields(text):
     return fields
 
 
-def _project_from_folder(folder):
-    """Build a project dict from one folder item in the Projects repo."""
+def _build_project_card(folder_name: str, filenames: list, idx: int = 0):
+    """Build a project dict using raw.githubusercontent.com fetches (0 API rate-limit cost)."""
+    fallback_title = folder_name.replace("-", " ").replace("_", " ").title()
+    safe_name = requests.utils.quote(folder_name)
+    source_url = f"https://github.com/{GITHUB_USERNAME}/{PROJECTS_REPO}/tree/main/{safe_name}"
+    preview_url = source_url
+
+    parsed = {
+        "name": "", "role": "", "description": "",
+        "language": "", "framework": "", "live_preview": ""
+    }
+
+    # Find README filename if known from tree, otherwise probe common names
+    readme_candidates = [f for f in filenames if f.lower().startswith("readme")]
+    if not readme_candidates:
+        readme_candidates = ["README.md", "readme.md", "README.txt", "readme.txt"]
+
+    readme_text = None
+    for rname in readme_candidates:
+        readme_text = _get_raw_text(PROJECTS_REPO, f"{folder_name}/{rname}")
+        if readme_text:
+            break
+
+    if readme_text:
+        parsed = _parse_readme_fields(readme_text)
+        if not parsed.get("description"):
+            parsed["description"] = _extract_plain_desc(readme_text)
+        if parsed.get("live_preview"):
+            preview_url = _normalize_preview_url(parsed["live_preview"])
+
+    title = (parsed.get("name") or fallback_title).strip()
+    desc = (parsed.get("description") or f"A project called '{title}'. View the source on GitHub.").strip()
+
+    tech = []
+    for raw in (parsed.get("language", ""), parsed.get("framework", "")):
+        for item in re.split(r"[,/&+]+", raw):
+            item = item.strip()
+            if item and item not in tech:
+                tech.append(item)
+
+    if not parsed.get("framework", "").strip():
+        has_req = any(f.lower() == "requirements.txt" for f in filenames) or not filenames
+        if has_req:
+            req_text = _get_raw_text(PROJECTS_REPO, f"{folder_name}/requirements.txt")
+            if req_text:
+                for fw in _detect_frameworks_from_requirements(req_text):
+                    if fw not in tech:
+                        tech.append(fw)
+
+    if not tech:
+        tech = _detect_tech_from_filenames(filenames)
+    tech = tech or ["Python"]
+
+    color = _PALETTE[idx % len(_PALETTE)]
+    has_live = bool(preview_url and preview_url != source_url)
+    return {
+        "title": title,
+        "role": parsed.get("role", ""),
+        "desc": desc,
+        "tech": tech,
+        "img": f"https://placehold.co/600x300/{color}/ffffff?text={requests.utils.quote(title)}",
+        "preview": preview_url,
+        "source": source_url,
+        "stars": 0,
+        "has_live": has_live,
+    }
+
+
+def fetch_projects_github(max_count: int = 20, return_meta: bool = False):
+    """
+    Fetch projects live from GitHub on every call.
+    Only falls back to portfolio_data.json if GitHub is completely unreachable.
+    """
     try:
-        fname = folder["name"]
-        folder_url = folder["html_url"]
-
-        # List folder contents
-        files = _get_json(folder["url"]) or []
-        if not isinstance(files, list):
-            files = []
-
-        # Fetch and parse README
-        parsed = {
-            "name": "", "role": "", "description": "",
-            "language": "", "framework": "", "live_preview": ""
-        }
-        readme = next(
-            (f for f in files
-             if f["name"].lower().startswith("readme") and f["type"] == "file"),
-            None,
-        )
-        if readme and readme.get("download_url"):
-            try:
-                r = requests.get(readme["download_url"], timeout=5)
-                if r.status_code == 200:
-                    parsed = _parse_readme_fields(r.text)
-                    if not parsed["description"]:
-                        parsed["description"] = _extract_plain_desc(r.text)
-            except Exception:
-                pass
-
-        # Title
-        title = (parsed["name"]
-                 or fname.replace("-", " ").replace("_", " ").title())
-
-        # Description
-        desc = (parsed["description"]
-                or f"A project called '{title}'. View the source on GitHub.")
-
-        # Tech tags: README-declared languages/frameworks first
-        tech = []
-        for raw in (parsed["language"], parsed["framework"]):
-            for item in re.split(r"[,/&+]+", raw):
-                item = item.strip()
-                if item and item not in tech:
-                    tech.append(item)
-
-        # If README has no framework field, detect frameworks from requirements.txt
-        if not parsed["framework"].strip():
-            req_file = next(
-                (f for f in files
-                 if f["name"].lower() == "requirements.txt" and f["type"] == "file"),
-                None,
-            )
-            if req_file and req_file.get("download_url"):
-                try:
-                    r = requests.get(req_file["download_url"], timeout=5)
-                    if r.status_code == 200:
-                        for fw in _detect_frameworks_from_requirements(r.text):
-                            if fw not in tech:
-                                tech.append(fw)
-                except Exception:
-                    pass
-
-        # Final fallback: infer from file extensions when nothing found yet
-        if not tech:
-            tech = _detect_tech_from_files(
-                [f for f in files if f["type"] == "file"]
-            )
-        tech = tech or ["Code"]
-
-        # Placeholder image
-        color = _PALETTE[hash(fname) % len(_PALETTE)]
-        img = (
-            f"https://placehold.co/600x300/{color}/ffffff"
-            f"?text={requests.utils.quote(title)}"
-        )
-
-        # Preview link: use live URL from README if available
-        preview_url = _normalize_preview_url(parsed["live_preview"]) or folder_url
-        has_live    = bool(parsed["live_preview"])
-
-        return {
-            "title":    title,
-            "role":     parsed["role"],
-            "desc":     desc,
-            "tech":     tech,
-            "img":      img,
-            "preview":  preview_url,
-            "source":   folder_url,
-            "stars":    0,
-            "has_live": has_live,
-        }
-    except Exception:
-        return None
-
-
-def fetch_projects_github(max_count: int = 20):
-    """Return projects from GitHub repository folders, with local JSON fallback."""
-    try:
-        contents = _fetch_repo_contents(PROJECTS_REPO, "main")
-        if isinstance(contents, list):
-            names = [item.get("name") for item in contents if item.get("type") == "dir"]
-            names = [name for name in names if name and name != ".devcontainer"]
-            if names:
-                projects = []
-                for name in names[:max_count]:
-                    project = _build_project_from_repo_name(name)
-                    if project:
-                        projects.append(project)
-                if projects:
-                    return projects
+        folders_map, is_live = _fetch_repo_tree_single_call(PROJECTS_REPO, "main")
+        if is_live and folders_map:
+            folder_items = list(folders_map.items())[:max_count]
+            # Fetch READMEs concurrently via raw.githubusercontent.com for fast page reloads
+            with ThreadPoolExecutor(max_workers=min(8, len(folder_items) or 1)) as pool:
+                futures = [
+                    pool.submit(_build_project_card, fname, flist, i)
+                    for i, (fname, flist) in enumerate(folder_items)
+                ]
+                projects = [f.result() for f in futures if f.result()]
+            if projects:
+                return (projects, True) if return_meta else projects
     except Exception:
         pass
 
-    try:
-        local_data = _load_local_portfolio_data()
-        if local_data and isinstance(local_data.get("projects"), list):
-            return local_data["projects"][:max_count]
-    except Exception:
-        pass
+    # Fallback 1: checked-in portfolio_data.json
+    local_data = _load_local_portfolio_data()
+    if local_data and isinstance(local_data.get("projects"), list) and local_data["projects"]:
+        projs = local_data["projects"][:max_count]
+        return (projs, False) if return_meta else projs
 
-    try:
-        url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{PROJECTS_REPO}/contents"
-        items = _get_json(url)
-        if not items or not isinstance(items, list):
-            return _FALLBACK_PROJECTS[:max_count]
-
-        folders = [i for i in items if i.get("type") == "dir"]
-        if not folders:
-            return _FALLBACK_PROJECTS[:max_count]
-
-        out = []
-        for folder in folders[:max_count]:
-            proj = _project_from_folder(folder)
-            if proj:
-                out.append(proj)
-
-        return out or _FALLBACK_PROJECTS[:max_count]
-    except Exception:
-        return _FALLBACK_PROJECTS[:max_count]
+    # Fallback 2: hardcoded constants
+    projs = _FALLBACK_PROJECTS[:max_count]
+    return (projs, False) if return_meta else projs
 
 
 # ─────────────────────────────────────────────────────────────
@@ -708,29 +626,25 @@ def _cert_style_for(name: str, issuer: str):
     return _DEFAULT_CERT_STYLE
 
 
-def _cert_from_pdf(pdf_item):
-    """Build a cert dict from one PDF file item in the certificates repo."""
+def _cert_from_filename(filename: str):
+    """Build a cert dict from a PDF filename in the certificates repo."""
     try:
-        filename = pdf_item["name"]
         stem = filename[:-4] if filename.lower().endswith(".pdf") else filename
-
-        # Split on " by " (case-insensitive) to get name + issuer
         m = re.split(r"\s+by\s+", stem, maxsplit=1, flags=re.IGNORECASE)
         if len(m) == 2:
             raw_name, issuer = m[0].strip(), m[1].strip()
         else:
             raw_name, issuer = stem.strip(), ""
 
-        # Clean up name
         cert_name = re.sub(r"[_\-]+", " ", raw_name).strip()
         cert_name = re.sub(r"\s+", " ", cert_name)
         if cert_name and cert_name[0].islower():
             cert_name = cert_name[0].upper() + cert_name[1:]
 
         logo_html, logo_bg, badge_color, badge_text = _cert_style_for(cert_name, issuer)
-
-        # Raw PDF URL for in-page viewer (download_url = direct GitHub content URL)
-        raw_url = pdf_item.get("download_url") or pdf_item["html_url"]
+        safe_file = requests.utils.quote(filename)
+        html_url = f"https://github.com/{GITHUB_USERNAME}/{CERTS_REPO}/blob/main/{safe_file}"
+        raw_url = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{CERTS_REPO}/main/{safe_file}"
 
         return {
             "logo_html": logo_html,
@@ -739,37 +653,67 @@ def _cert_from_pdf(pdf_item):
             "issuer":    issuer,
             "status":    "Certified",
             "badge":     f"https://placehold.co/80x80/{badge_color}/ffffff?text={badge_text}",
-            "link":      pdf_item["html_url"],   # GitHub blob viewer (fallback)
-            "raw_url":   raw_url,                # direct PDF for in-page popup
+            "link":      html_url,
+            "raw_url":   raw_url,
             "featured":  False,
         }
     except Exception:
         return None
 
 
-def fetch_certs_github():
-    """Return certificates from GitHub certificate files, with local JSON fallback."""
-    local_data = _load_local_portfolio_data()
-    if local_data and isinstance(local_data.get("certificates"), list):
-        return local_data["certificates"]
-
+def fetch_certs_github(return_meta: bool = False):
+    """
+    Fetch certificates live from GitHub first.
+    Falls back to portfolio_data.json only if GitHub is unreachable.
+    """
     try:
+        # 1. Try GitHub contents API with cache-buster
         url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{CERTS_REPO}/contents"
-        items = _get_json(url)
-        if not items or not isinstance(items, list):
-            return _FALLBACK_CERTS
+        items = _get_json(url, params={"ref": "main"})
+        pdf_names = []
+        if isinstance(items, list):
+            pdf_names = [
+                i["name"] for i in items
+                if i.get("type") == "file" and i.get("name", "").lower().endswith(".pdf")
+            ]
 
-        pdfs = [i for i in items
-                if i.get("type") == "file" and i["name"].lower().endswith(".pdf")]
-        if not pdfs:
-            return _FALLBACK_CERTS
+        # 2. If REST API rate-limited, try Git Trees API
+        if not pdf_names:
+            tree_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{CERTS_REPO}/git/trees/main"
+            tree_data = _get_json(tree_url)
+            if tree_data and isinstance(tree_data.get("tree"), list):
+                pdf_names = [
+                    i["path"] for i in tree_data["tree"]
+                    if i.get("type") == "blob" and i.get("path", "").lower().endswith(".pdf")
+                ]
 
-        out = []
-        for pdf in pdfs:
-            cert = _cert_from_pdf(pdf)
-            if cert:
-                out.append(cert)
+        # 3. If still empty, parse public GitHub HTML page (0 API quota)
+        if not pdf_names:
+            html_url = f"https://github.com/{GITHUB_USERNAME}/{CERTS_REPO}/tree/main"
+            r = _SESSION.get(
+                html_url,
+                headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"},
+                params={"_cb": int(time.time() * 1000)},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                pat = rf'/{re.escape(GITHUB_USERNAME)}/{re.escape(CERTS_REPO)}/blob/main/([^"?#]+\.pdf)'
+                for m in re.finditer(pat, r.text, re.IGNORECASE):
+                    fname = requests.utils.unquote(m.group(1)).strip()
+                    if fname and fname not in pdf_names:
+                        pdf_names.append(fname)
 
-        return out or _FALLBACK_CERTS
+        if pdf_names:
+            out = [c for c in (_cert_from_filename(fn) for fn in pdf_names) if c]
+            if out:
+                return (out, True) if return_meta else out
     except Exception:
-        return _FALLBACK_CERTS
+        pass
+
+    # Fallback to local portfolio_data.json only when live fetch fails
+    local_data = _load_local_portfolio_data()
+    if local_data and isinstance(local_data.get("certificates"), list) and local_data["certificates"]:
+        certs = local_data["certificates"]
+        return (certs, False) if return_meta else certs
+
+    return (_FALLBACK_CERTS, False) if return_meta else _FALLBACK_CERTS
