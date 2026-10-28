@@ -106,7 +106,7 @@ st.markdown(
 )
 
 if "api_key" not in st.session_state:
-    st.session_state.api_key = ""
+    st.session_state.api_key = st.secrets["GOOGLE_API_KEY"]
 
 api_key = st.session_state.api_key
 
