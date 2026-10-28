@@ -861,9 +861,8 @@ st.markdown(f"""
 # JavaScript: Scroll effects, nav active, typing, particles
 # Injected via st.html() so scripts actually execute.
 # ─────────────────────────────────────────────────────────────
-
-
-try:
-    st.html(PAGE_SCRIPT, unsafe_allow_javascript=True)
-except TypeError:
-    components.html(PAGE_SCRIPT, height=0)
+# ─────────────────────────────────────────────────────────────
+# JavaScript: Scroll effects, nav active, typing, particles
+# Injected via st.html() so scripts actually execute.
+# ─────────────────────────────────────────────────────────────
+st.html(PAGE_SCRIPT, unsafe_allow_javascript=True)
