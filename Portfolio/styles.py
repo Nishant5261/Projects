@@ -492,18 +492,18 @@ a.back-to-top, a.back-to-top:visited {{
   margin-bottom:0.75rem;
   padding-right:0.25rem;
 }}
-.scroll-arrow-btn {{
-  width:34px; height:34px;
+.scroll-arrow-btn:disabled {{
+  opacity:0.32;
+  cursor:not-allowed;
+  transform:none !important;
+  box-shadow:none !important;
+}}
+.gh-source-badge .live-dot {{
+  width:7px; height:7px;
   border-radius:50%;
-  background:{T['card']};
-  border:1px solid {T['border']};
-  color:{T['text']};
-  font-size:1.3rem;
-  cursor:pointer;
-  display:inline-flex; align-items:center; justify-content:center;
-  transition:all 0.25s ease;
-  line-height:1;
-  flex-shrink:0;
+  background:{T['accent3']};
+  display:inline-block;
+  animation:pulseRing 2s ease-out infinite;
 }}
 .scroll-arrow-btn:hover {{
   background:{T['tag_bg']};
@@ -603,12 +603,13 @@ a.back-to-top, a.back-to-top:visited {{
 }}
 /* ── Hero portrait ── */
 .hero-portrait-wrap {{
-  flex-shrink:0;
-  position:relative;
-  width:540px;
-  display:flex;
-  align-items:flex-end;
-  justify-content:center;
+  flex-shrink: 0;
+  position: relative;
+  width: 540px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  margin-top: -100px; /* <--- Shifts the portrait upwards (adjust pixel value as needed) */
 }}
 .hero-portrait-glow {{
   position:absolute;
@@ -1154,7 +1155,9 @@ a.back-to-top, a.back-to-top:visited {{
   transform-origin:center center;
   will-change:transform;
 }}
-.proj-scroll-item:hover .proj-card {{
+.proj-scroll-item:hover .proj-card,
+.proj-scroll-item.is-flipped .proj-card,
+.proj-scroll-item:focus-within .proj-card {{
   z-index:100;
   transform:rotateY(180deg);
 }}
@@ -1214,6 +1217,32 @@ a.back-to-top, a.back-to-top:visited {{
 }}
 
 /* ── Back face: description + preview/source links, revealed on flip ── */
+.proj-back-title {{
+  font-size:0.95rem;
+  font-weight:700;
+  color:{T['accent']};
+  margin-bottom:0.45rem;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}}
+.proj-desc {{
+  font-size:0.81rem;
+  color:{T['text2']};
+  line-height:1.6;
+  margin-bottom:0.85rem;
+  overflow-y:auto;
+  max-height:155px;
+  padding-right:4px;
+}}
+.proj-tech {{
+  display:flex;
+  flex-wrap:wrap;
+  gap:0.3rem;
+  margin-top:auto;
+  max-height:58px;
+  overflow:hidden;
+}}
 .proj-extra {{
   position:absolute;
   inset:0;
@@ -1281,6 +1310,20 @@ a.back-to-top, a.back-to-top:visited {{
   background:{T['accent']};
   color:#fff !important;
   transform:scale(1.04);
+}}
+.proj-flip-hint {{
+  position:absolute;
+  top:14px; right:14px;
+  z-index:3;
+  width:26px; height:26px;
+  border-radius:50%;
+  background:{TA('card','cc')};
+  border:1px solid {TA('border','88')};
+  color:{T['accent']};
+  font-size:0.7rem;
+  display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(4px);
+  pointer-events:none;
 }}
 
 /* ═══════════════════════════════════════════
