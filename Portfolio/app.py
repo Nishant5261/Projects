@@ -1,6 +1,7 @@
 import streamlit as st
-
+import streamlit.components.v1 as components
 import smtplib
+import json
 import re
 import os
 import base64
@@ -8,7 +9,7 @@ import html as _html
 from urllib.parse import quote as _url_quote
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
+import requests
 from links import LINKS
 from styles import render_css
 from scripts import PAGE_SCRIPT
@@ -17,22 +18,33 @@ from scripts import PAGE_SCRIPT
 try:
     from github_data import fetch_projects_github, fetch_certs_github as _fetch_certs_gh
 except Exception:
-    def fetch_projects_github(max_count=20): return None
-    def _fetch_certs_gh(): return None
+    def fetch_projects_github(max_count=20, return_meta=False):
+        return ([], False) if return_meta else None
+    def _fetch_certs_gh(return_meta=False):
+        return ([], False) if return_meta else None
 
-@st.cache_data(ttl=3600, show_spinner=False)
+
+# Live fetch on every reload (no 1-hour @st.cache_data lock)
 def _load_gh_projects():
-    return fetch_projects_github(max_count=20)
+    return fetch_projects_github(max_count=20, return_meta=True)
 
-@st.cache_data(ttl=3600, show_spinner=False)
+
 def _load_gh_certs():
-    return _fetch_certs_gh()
+    return _fetch_certs_gh(return_meta=True)
+
 
 # Resolve assets relative to this file so they work from any working directory.
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _ASSET_DIR = os.path.join(_BASE_DIR, "attached_assets")
 _PORTRAIT_FILE = os.path.join(_ASSET_DIR, "portrait_1784056692141.png")
 _PAGE_ICON_FILE = os.path.join(_ASSET_DIR, "portfolio.png")
+_DATA_JSON_FILE = os.path.join(_BASE_DIR, "portfolio_data.json")
+
+try:
+    with open(_DATA_JSON_FILE, "r", encoding="utf-8") as _jf:
+        _PORTFOLIO_JSON = json.load(_jf)
+except Exception:
+    _PORTFOLIO_JSON = {}
 
 # ─── Load hero portrait (background-removed PNG → base64) ───
 try:
@@ -57,8 +69,6 @@ st.set_page_config(
 if "contact_sent" not in st.session_state:
     st.session_state.contact_sent = False
 
-# Theme driven entirely by ?theme= URL query param.
-# The nav button changes the URL → page reloads → Python reads the new param.
 _qp = st.query_params.get("theme", "")
 if _qp in ("dark", "light"):
     st.session_state.theme = _qp
@@ -69,15 +79,6 @@ DARK = st.session_state.theme == "dark"
 
 # ─────────────────────────────────────────────────────────────
 # Theme Palette
-#
-# Colors live as CSS custom properties (--bg, --accent, ...) so the theme
-# button can flip them instantly in the browser (just toggling a
-# `data-theme` attribute on <html>) instead of round-tripping through a
-# Streamlit rerun, which used to feel like a full page reload.
-# `T` keeps the same keys as before but each value is now `var(--key)`, so
-# every existing `{T['accent']}` usage (inline styles + the CSS block below)
-# keeps working unchanged — it just resolves live via CSS instead of being
-# baked in at render time.
 # ─────────────────────────────────────────────────────────────
 THEME_DARK = {
     "bg":           "#0d1117",
@@ -141,10 +142,6 @@ THEME_LIGHT = {
 T = {k: f"var(--{k})" for k in THEME_DARK}
 T["toggle_icon"] = "☀️" if DARK else "🌙"
 
-# Keys that get an alpha channel spliced onto their hex value elsewhere in
-# this file (e.g. f"{T['accent']}33" for a translucent glow). A CSS var
-# can't have hex digits appended to it, so these also get an "-rgb" triplet
-# variable, and TA() below builds an rgba() call against it instead.
 _RGB_KEYS = ["accent", "accent2", "accent3", "border", "card", "tag_bg"]
 
 def _hex_to_rgb(hexstr):
@@ -270,12 +267,17 @@ st.markdown(f"""
 </section>
 """, unsafe_allow_html=True)
 
+# ── Fetch Live Projects & Certs early so stats & sections reflect live counts ──
+_gh_projects, _gh_proj_live = _load_gh_projects()
+_gh_certs, _gh_cert_live = _load_gh_certs()
+
 # ── Stats + About ──
 st.markdown(f'<section class="page-section" id="about" style="background:{T["bg"]};">', unsafe_allow_html=True)
 
+_proj_count_stat = f"{max(len(_gh_projects or []), 4)}+"
 s1, s2, s3, s4 = st.columns(4)
-stats = [("4+","Projects Built"),("6+","Technologies"),("1","Hackathon Award"),("2+","Years Coding")]
-for col, (num, label), idx in zip([s1,s2,s3,s4], stats, range(4)):
+stats = [(_proj_count_stat, "Projects Built"), ("25+", "Technologies"), ("1", "Hackathon Award"), ("2+", "Years Coding")]
+for col, (num, label), idx in zip([s1, s2, s3, s4], stats, range(4)):
     with col:
         st.markdown(f'<div class="stat-box reveal stagger-{idx+1}"><span class="stat-num">{num}</span><div class="stat-label">{label}</div></div>', unsafe_allow_html=True)
 
@@ -287,17 +289,14 @@ with col_a:
     <div class="reveal-left">
       <div class="section-title" style="text-align:left;font-size:1.6rem;">About Me</div>
       <div class="accent-line-left"></div>
-      <p class="about-text">I'm <strong>Nishant Giri</strong>, a second-year Computer Science student at the
+      <p class="about-text">I'm <strong>Nishant Giri</strong>, a Final-year Computer Science student at the
       <strong>Institute of Engineering & Technology, Lucknow</strong>, with a genuine passion for building
       intelligent systems that solve real-world problems.</p>
-      <p class="about-text">My journey has been shaped by a love for Python and Machine Learning — from crafting
-      an <strong>AI-powered Interview Assistant</strong> using the OpenAI API to building a
-      <strong>Fantasy Cricket Team Generator</strong> that applies ML to sports analytics.</p>
-      <p class="about-text">Beyond coding, I've developed leadership skills as the
-      <strong>Finance Head of TEDxLucknow</strong>, managing budgets for a large-scale collegiate event.
-      I believe great engineers communicate, collaborate, and deliver real impact — not just clean code.</p>
+      <p class="about-text">My technical journey spans Python, Machine Learning, and backend engineering — including my experience as a 
+      <strong>Data and Backend Developer at Bharat Work</strong>, where I built automated pipelines and optimized data workflows, alongside crafting AI-powered applications.</p>
+      <p class="about-text">Beyond coding, I've developed leadership skills as <strong>Finance Head of TEDxLucknow, Media Head at Whiteboard(IET Media Body)</strong>.</p>
       <p class="about-text">Currently seeking opportunities to grow at the intersection of
-      <strong>data science, automation, and AI</strong>.</p>
+      <strong>software engineering, data science, automation, and AI</strong>.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -306,90 +305,151 @@ with col_e:
     <div class="reveal-right">
       <div class="section-title" style="text-align:left;font-size:1.5rem;">Education</div>
       <div class="accent-line-left"></div>
-      <div class="timeline-item">
-        <div class="timeline-dot">🎓</div>
-        <div>
-          <div class="timeline-title">B.Tech — Computer Science</div>
-          <div class="timeline-org">Institute of Engineering & Technology, Lucknow</div>
-          <div class="timeline-date"><i class="fas fa-calendar-alt" style="color:{T['muted']};font-size:0.7rem;"></i>&nbsp; Sep 2023 — Present</div>
-          <div class="timeline-desc">Full-time B.Tech in CS focusing on algorithms, data structures,
-          machine learning, and software engineering.</div>
-        </div>
-      </div>
-
-      <div class="section-title" style="text-align:left;font-size:1.5rem;margin-top:1.75rem;">Experience</div>
-      <div class="accent-line-left"></div>
-      <div class="timeline-item">
-        <div class="timeline-dot">💼</div>
-        <div>
-          <div class="timeline-title">Finance Head</div>
-          <div class="timeline-org">TEDxLucknow</div>
-          <div class="timeline-date"><i class="fas fa-calendar-alt" style="color:{T['muted']};font-size:0.7rem;"></i>&nbsp; November 2025 · Lucknow, India</div>
-          <div class="timeline-desc">Spearheaded financial planning and budget management for a
-          large-scale collegiate TEDx event. Coordinated with sponsors and managed end-to-end
-          expense tracking for 500+ attendees.</div>
-        </div>
-      </div>
-    </div>
     """, unsafe_allow_html=True)
 
+    # Dynamically render education from portfolio_data.json
+    for edu in _PORTFOLIO_JSON.get("education", []):
+        edu_degree = _html.escape(edu.get("degree", ""))
+        edu_org = _html.escape(edu.get("org", ""))
+        edu_date = _html.escape(edu.get("date", ""))
+        edu_loc = _html.escape(edu.get("location", ""))
+        edu_desc = _html.escape(edu.get("description", ""))
+        date_str = f"{edu_date} · {edu_loc}" if edu_loc else edu_date
+
+        st.markdown(f"""
+          <div class="timeline-item">
+            <div class="timeline-dot">🎓</div>
+            <div>
+              <div class="timeline-title">{edu_degree}</div>
+              <div class="timeline-org">{edu_org}</div>
+              <div class="timeline-date"><i class="fas fa-calendar-alt" style="color:{T['muted']};font-size:0.7rem;"></i>&nbsp; {date_str}</div>
+              <div class="timeline-desc">{edu_desc}</div>
+            </div>
+          </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+      <div class="section-title" style="text-align:left;font-size:1.5rem;margin-top:1.75rem;">Experience</div>
+      <div class="accent-line-left"></div>
+    """, unsafe_allow_html=True)
+
+    # Dynamically render experience from portfolio_data.json
+    for exp in _PORTFOLIO_JSON.get("experience", []):
+        exp_title = _html.escape(exp.get("title", ""))
+        exp_org = _html.escape(exp.get("org", ""))
+        exp_date = _html.escape(exp.get("date", ""))
+        exp_loc = _html.escape(exp.get("location", ""))
+        exp_desc = _html.escape(exp.get("description", ""))
+        date_str = f"{exp_date} · {exp_loc}" if exp_loc else exp_date
+
+        st.markdown(f"""
+          <div class="timeline-item">
+            <div class="timeline-dot">💼</div>
+            <div>
+              <div class="timeline-title">{exp_title}</div>
+              <div class="timeline-org">{exp_org}</div>
+              <div class="timeline-date"><i class="fas fa-calendar-alt" style="color:{T['muted']};font-size:0.7rem;"></i>&nbsp; {date_str}</div>
+              <div class="timeline-desc">{exp_desc}</div>
+            </div>
+          </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
 st.markdown("<br>", unsafe_allow_html=True)
+
 st.markdown(f"""
 <div class="reveal" style="max-width:700px;margin:0 auto;">
   <div class="section-title" style="text-align:left;font-size:1.5rem;">Achievements</div>
   <div class="accent-line-left"></div>
-  <div class="achievement">
-    <div class="achievement-icon">🥈</div>
-    <div>
-      <div class="achievement-title">Runner-up — College Level Hackathon</div>
-      <div class="achievement-detail">Built a functional AI solution under a tight deadline, competing against 40+ teams. December 2024.</div>
-    </div>
-  </div>
 </div>
 """, unsafe_allow_html=True)
 
-
+# Loop through achievements and render each one cleanly
+for ach in _PORTFOLIO_JSON.get("achievements", []):
+    ach_icon = _html.escape(ach.get("icon", "🏆"))
+    ach_title = _html.escape(ach.get("title", ""))
+    ach_detail = _html.escape(ach.get("detail", ""))
+    
+    st.markdown(f"""
+    <div class="reveal" style="max-width:700px;margin:0 auto;">
+      <div class="achievement">
+        <div class="achievement-icon">{ach_icon}</div>
+        <div>
+          <div class="achievement-title">{ach_title}</div>
+          <div class="achievement-detail">{ach_detail}</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 st.markdown("</section>", unsafe_allow_html=True)
-
 # ─────────────────────────────────────────────────────────────
-# ══ SECTION: SKILLS ══
+# ══ SECTION: SKILLS (Loaded from portfolio_data.json) ══
 # ─────────────────────────────────────────────────────────────
 DI = DEVICON
 
-# Skill data: (label, icon_html)
-lang_chips = [
+_SVG_OPENAI = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#74AA9C" d="M22.5 10.7c0-1.5-.2-2.8-.6-4.1-.4-1.3-1-2.4-1.7-3.4-.8-1-1.8-1.8-3-2.4-1.2-.6-2.5-1-3.9-1-1.4 0-2.7.3-3.9 1-1.2.6-2.2 1.4-3 2.4-.8 1-1.4 2.1-1.7 3.4-.4 1.3-.6 2.6-.6 4.1 0 1.5.2 2.8.6 4.1.4 1.3 1 2.4 1.7 3.4.8 1 1.8 1.8 3 2.4 1.2.6 2.5 1 3.9 1 1.4 0 2.7-.3 3.9-1 1.2-.6 2.2-1.4 3-2.4.8-1 1.4-2.1 1.7-3.4.4-1.3.6-2.6.6-4.1zM12 19.4c-1.3 0-2.5-.2-3.6-.7-1.1-.4-2.1-1-2.9-1.8-.8-.8-1.5-1.8-2-2.9-.4-1.1-.7-2.3-.7-3.6 0-1.3.2-2.5.7-3.6.4-1.1 1-2.1 2-2.9.8-.8 1.8-1.5 2.9-2 .7-.3 1.5-.4 2.3-.4.5 0 1 .1 1.5.2.4.1.8.3 1.2.5.4.2.7.5 1 .8.3.3.6.6.9.9-.4.3-.8.6-1.2.9-.4.2-.8.4-1.2.6-.4.2-.8.3-1.2.3-.5 0-1-.1-1.5-.3-.6-.2-1.2-.5-1.7-.9-.6-.4-1.1-.9-1.5-1.5-.4-.6-.6-1.3-.6-2.1 0-.5.1-1 .3-1.5.2-.4.4-.8.8-1.2.3-.3.7-.6 1.1-.8.4-.2.8-.4 1.2-.5.4-.2.8-.2 1.3-.2.3 0 .6 0 .9.1.3.1.6.2.8.4.2.1.4.3.6.4.2.2.4.4.6.6.3.2.6.4.8.7.3.2.6.4.8.5.3.1.5.2.8.3.2.2.4.5.5.8.2.3.3.7.4 1.2.6.5.4 1 .9 1.5 1.3.5.4 1 .8 1.5 1.2.5.4 1 .8 1.4 1.2.4.4.8.8 1.1 1.3.3.5.6 1 .7 1.6.2.6.2 1.2.2 1.8z"/></svg>'
+_SVG_POWERBI = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#F2C411" d="M21 3H9c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-2h2c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14H7V9h12v8zm2-4h-2V7h-8V5h10v8z"/><path fill="#F2C411" d="M10 11h2v6h-2z"/><path fill="#F2C411" d="M14 9h2v8h-2z"/><path fill="#F2C411" d="M18 7h2v10h-2z"/></svg>'
+_SVG_EXCEL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#217346" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm1 17H9v-2h6v2zm0-4H9v-2h6v2zm0-4H9V9h6v2zm-1-5.2L16.2 8H13V4.8z"/></svg>'
+
+def _resolve_skill_icon(icon_spec: str):
+    if not icon_spec:
+        return '<i class="fas fa-code" style="color:#79c0ff;font-size:1rem;"></i>'
+    if icon_spec == "openai":
+        return _SVG_OPENAI
+    if icon_spec == "powerbi":
+        return _SVG_POWERBI
+    if icon_spec == "excel":
+        return _SVG_EXCEL
+    if icon_spec.startswith("devicon:"):
+        path = icon_spec.split("devicon:", 1)[1]
+        return f'<img src="{DI}/{path}" alt="">'
+    if icon_spec.startswith("fa:"):
+        parts = icon_spec.split(":")
+        fa_cls = parts[1] if len(parts) > 1 else "fas fa-code"
+        fa_col = parts[2] if len(parts) > 2 else "#79c0ff"
+        return f'<i class="{fa_cls}" style="color:{fa_col};font-size:1.05rem;"></i>'
+    return icon_spec
+
+def _chips_from_json(key, fallback_list):
+    raw_list = _PORTFOLIO_JSON.get("skills", {}).get(key)
+    if isinstance(raw_list, list) and raw_list:
+        return [(item.get("name", ""), _resolve_skill_icon(item.get("icon", ""))) for item in raw_list if item.get("name")]
+    return fallback_list
+
+lang_chips = _chips_from_json("languages", [
     ("Python",       f'<img src="{DI}/python/python-original.svg">'),
     ("C++",          f'<img src="{DI}/cplusplus/cplusplus-original.svg">'),
     ("C",            f'<img src="{DI}/c/c-original.svg">'),
     ("MySQL / SQL",  f'<img src="{DI}/mysql/mysql-original.svg">'),
     ("HTML5",        f'<img src="{DI}/html5/html5-original.svg">'),
     ("CSS3",         f'<img src="{DI}/css3/css3-original.svg">'),
-]
-lib_chips = [
+])
+lib_chips = _chips_from_json("libraries", [
     ("Pandas",       f'<img src="{DI}/pandas/pandas-original.svg">'),
     ("NumPy",        f'<img src="{DI}/numpy/numpy-original.svg">'),
     ("Scikit-learn", f'<img src="{DI}/scikitlearn/scikitlearn-original.svg">'),
     ("Matplotlib",   f'<img src="{DI}/matplotlib/matplotlib-original.svg">'),
     ("Streamlit",    f'<img src="{DI}/streamlit/streamlit-original.svg">'),
-    ("OpenAI API",   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#74AA9C" d="M22.5 10.7c0-1.5-.2-2.8-.6-4.1-.4-1.3-1-2.4-1.7-3.4-.8-1-1.8-1.8-3-2.4-1.2-.6-2.5-1-3.9-1-1.4 0-2.7.3-3.9 1-1.2.6-2.2 1.4-3 2.4-.8 1-1.4 2.1-1.7 3.4-.4 1.3-.6 2.6-.6 4.1 0 1.5.2 2.8.6 4.1.4 1.3 1 2.4 1.7 3.4.8 1 1.8 1.8 3 2.4 1.2.6 2.5 1 3.9 1 1.4 0 2.7-.3 3.9-1 1.2-.6 2.2-1.4 3-2.4.8-1 1.4-2.1 1.7-3.4.4-1.3.6-2.6.6-4.1zM12 19.4c-1.3 0-2.5-.2-3.6-.7-1.1-.4-2.1-1-2.9-1.8-.8-.8-1.5-1.8-2-2.9-.4-1.1-.7-2.3-.7-3.6 0-1.3.2-2.5.7-3.6.4-1.1 1-2.1 2-2.9.8-.8 1.8-1.5 2.9-2 .7-.3 1.5-.4 2.3-.4.5 0 1 .1 1.5.2.4.1.8.3 1.2.5.4.2.7.5 1 .8.3.3.6.6.9.9-.4.3-.8.6-1.2.9-.4.2-.8.4-1.2.6-.4.2-.8.3-1.2.3-.5 0-1-.1-1.5-.3-.6-.2-1.2-.5-1.7-.9-.6-.4-1.1-.9-1.5-1.5-.4-.6-.6-1.3-.6-2.1 0-.5.1-1 .3-1.5.2-.4.4-.8.8-1.2.3-.3.7-.6 1.1-.8.4-.2.8-.4 1.2-.5.4-.2.8-.2 1.3-.2.3 0 .6 0 .9.1.3.1.6.2.8.4.2.1.4.3.6.4.2.2.4.4.6.6.3.2.6.4.8.7.3.2.6.4.8.5.3.1.5.2.8.3.2.2.4.5.5.8.2.3.3.7.4 1.2.6.5.4 1 .9 1.5 1.3.5.4 1 .8 1.5 1.2.5.4 1 .8 1.4 1.2.4.4.8.8 1.1 1.3.3.5.6 1 .7 1.6.2.6.2 1.2.2 1.8z"/></svg>'),
-]
-tool_chips = [
+    ("OpenAI API",   _SVG_OPENAI),
+])
+tool_chips = _chips_from_json("tools", [
     ("VS Code",      f'<img src="{DI}/vscode/vscode-original.svg">'),
     ("PyCharm",      f'<img src="{DI}/pycharm/pycharm-original.svg">'),
     ("Jupyter",      f'<img src="{DI}/jupyter/jupyter-original.svg">'),
     ("IntelliJ IDEA",f'<img src="{DI}/intellij/intellij-original.svg">'),
     ("Git",          f'<img src="{DI}/git/git-original.svg">'),
-    ("Power BI",     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#F2C411" d="M21 3H9c-1.1 0-2 .9-2 2v2H5c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-2h2c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14H7V9h12v8zm2-4h-2V7h-8V5h10v8z"/><path fill="#F2C411" d="M10 11h2v6h-2z"/><path fill="#F2C411" d="M14 9h2v8h-2z"/><path fill="#F2C411" d="M18 7h2v10h-2z"/></svg>'),
-    ("Excel",        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#217346" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm1 17H9v-2h6v2zm0-4H9v-2h6v2zm0-4H9V9h6v2zm-1-5.2L16.2 8H13V4.8z"/></svg>'),
-]
-db_chips = [
+    ("Power BI",     _SVG_POWERBI),
+    ("Excel",        _SVG_EXCEL),
+])
+db_chips = _chips_from_json("databases", [
     ("MySQL",        f'<img src="{DI}/mysql/mysql-original.svg">'),
-]
+])
 
 def make_chips(chips, extra_class="skill-chip"):
     parts = []
     for i, (name, icon) in enumerate(chips):
-        parts.append(f'<div class="{extra_class} reveal-scale stagger-{(i%8)+1}">{icon}{name}</div>')
+        parts.append(f'<div class="{extra_class} reveal-scale stagger-{(i%6)+1}">{icon}{_html.escape(name)}</div>')
     return "".join(parts)
 
 st.markdown(f"""
@@ -410,7 +470,7 @@ with sk1:
     <div class="skill-section-card reveal-left">
       <div class="skills-category-label"><i class="fas fa-terminal"></i>&nbsp; Programming Languages</div>
       <div class="skill-chip-grid">{chips_lang}</div>
-      <div class="skills-category-label"><i class="fas fa-database"></i>&nbsp; Databases</div>
+      <div class="skills-category-label"><i class="fas fa-database"></i>&nbsp; Databases &amp; Storage</div>
       <div class="skill-chip-grid">{chips_db}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -420,9 +480,9 @@ with sk2:
     chips_tool = make_chips(tool_chips, "skill-chip tools-chip")
     st.markdown(f"""
     <div class="skill-section-card reveal-right">
-      <div class="skills-category-label"><i class="fas fa-cubes"></i>&nbsp; Libraries & Frameworks</div>
+      <div class="skills-category-label"><i class="fas fa-cubes"></i>&nbsp; Libraries, AI/ML &amp; Frameworks</div>
       <div class="skill-chip-grid">{chips_lib}</div>
-      <div class="skills-category-label"><i class="fas fa-tools"></i>&nbsp; Tools & Platforms</div>
+      <div class="skills-category-label"><i class="fas fa-tools"></i>&nbsp; Tools &amp; Platforms</div>
       <div class="skill-chip-grid">{chips_tool}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -430,7 +490,7 @@ with sk2:
 st.markdown("</section>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
-# ══ SECTION: PORTFOLIO  (GitHub-fetched, horizontal scroll)
+# ══ SECTION: PORTFOLIO  (GitHub-fetched live on reload)
 # ─────────────────────────────────────────────────────────────
 _FALLBACK_PROJECTS = [
     {"title":"AI Interview Assistant",
@@ -455,9 +515,7 @@ _FALLBACK_PROJECTS = [
      "preview":"https://github.com","source":"https://github.com","stars":0},
 ]
 
-_gh_projects    = _load_gh_projects()
-_gh_proj_live   = _gh_projects is not None
-_all_projects   = _gh_projects if _gh_proj_live else _FALLBACK_PROJECTS
+_all_projects = _gh_projects if _gh_projects else _FALLBACK_PROJECTS
 
 # Build all project card HTML as a single string
 _proj_items_html = ""
@@ -480,10 +538,11 @@ for _pi, _p in enumerate(_all_projects):
         '<i class="fas fa-external-link-alt"></i> Preview'
     )
     _proj_items_html += (
-        f'<div class="proj-scroll-item reveal {_st}">'
+        f'<div class="proj-scroll-item reveal {_st}" tabindex="0">'
         '<div class="proj-card">'
-        # ── FRONT: image (cropped tight, no wasted space) + title + tech list ──
+        # ── FRONT: image + flip hint + title + tech list ──
         '<div class="proj-face">'
+        '<span class="proj-flip-hint" title="Hover or tap to flip"><i class="fas fa-retweet"></i></span>'
         f'<img class="proj-face-bg" src="{_p["img"]}" alt="{_safe_img_alt}" loading="lazy"'
         f' onerror="this.src=\'https://placehold.co/600x300/30363d/7d8590?text={_ph_text}\'">'
         '<div class="proj-face-content">'
@@ -494,10 +553,11 @@ for _pi, _p in enumerate(_all_projects):
         '</div>'
         # ── BACK: revealed on flip — description + preview/source links ──
         '<div class="proj-extra">'
+        f'<div class="proj-back-title">{_safe_title}</div>'
         f'<p class="proj-desc">{_safe_desc}</p>'
         '<div class="proj-footer">'
-        f'<a class="btn-primary" href="{_p["preview"]}" target="_blank">{_preview_label}</a>'
-        f'<a class="btn-secondary" href="{_p["source"]}" target="_blank">'
+        f'<a class="btn-primary" href="{_p["preview"]}" target="_blank" rel="noopener">{_preview_label}</a>'
+        f'<a class="btn-secondary" href="{_p["source"]}" target="_blank" rel="noopener">'
         '<i class="fab fa-github"></i> Source</a>'
         '</div>'
         '</div>'
@@ -506,9 +566,9 @@ for _pi, _p in enumerate(_all_projects):
     )
 
 _proj_badge_html = (
-    f'<i class="fab fa-github"></i>&nbsp; {len(_all_projects)} repos · live from GitHub'
+    f'<span class="live-dot"></span><i class="fab fa-github"></i>&nbsp; {len(_all_projects)} repos · live from GitHub'
     if _gh_proj_live else
-    '<i class="fas fa-code"></i>&nbsp; Featured projects'
+    f'<i class="fas fa-code"></i>&nbsp; {len(_all_projects)} featured projects'
 )
 
 st.markdown(f"""
@@ -516,12 +576,12 @@ st.markdown(f"""
   <div class="section-header">
     <div class="section-eyebrow reveal"><i class="fas fa-layer-group"></i>&nbsp; Work</div>
     <div class="section-title reveal">Projects</div>
-    <div class="section-sub reveal">Things I've built and shipped</div>
+    <div class="section-sub reveal">Things I've built and shipped — hover or tap any card to inspect</div>
     <div class="gh-source-badge reveal">{_proj_badge_html}</div>
   </div>
   <div class="scroll-controls">
-    <button class="scroll-arrow-btn" data-track="proj-track" data-dir="-1" title="Scroll left">&#8249;</button>
-    <button class="scroll-arrow-btn" data-track="proj-track" data-dir="1" title="Scroll right">&#8250;</button>
+    <button class="scroll-arrow-btn" data-track="proj-track" data-dir="-1" title="Scroll left" aria-label="Scroll projects left">&#8249;</button>
+    <button class="scroll-arrow-btn" data-track="proj-track" data-dir="1" title="Scroll right" aria-label="Scroll projects right">&#8250;</button>
   </div>
   <div class="horiz-scroll-track" id="proj-track">
     {_proj_items_html}
@@ -530,7 +590,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────
-# ══ SECTION: CERTIFICATIONS  (GitHub-fetched, horizontal scroll)
+# ══ SECTION: CERTIFICATIONS  (GitHub-fetched live on reload)
 # ─────────────────────────────────────────────────────────────
 _FALLBACK_CERTS = [
     {"logo_html": f'<img src="{DI}/python/python-original.svg" width="28">',
@@ -565,9 +625,6 @@ _FALLBACK_CERTS = [
      "link": "#", "featured": False},
 ]
 
-_gh_certs   = _load_gh_certs()
-_gh_cert_live = _gh_certs is not None
-
 def _normalise_cert(c):
     """Accept both GitHub JSON format and fallback format."""
     return {
@@ -582,7 +639,7 @@ def _normalise_cert(c):
         "featured":  bool(c.get("featured", False)),
     }
 
-_all_certs = [_normalise_cert(c) for c in (_gh_certs if _gh_cert_live else _FALLBACK_CERTS)]
+_all_certs = [_normalise_cert(c) for c in (_gh_certs if _gh_certs else _FALLBACK_CERTS)]
 
 _cert_items_html = ""
 for _ci, _c in enumerate(_all_certs):
@@ -609,9 +666,9 @@ for _ci, _c in enumerate(_all_certs):
     )
 
 _cert_badge_html = (
-    f'<i class="fab fa-github"></i>&nbsp; {len(_all_certs)} certs · live from GitHub'
+    f'<span class="live-dot"></span><i class="fab fa-github"></i>&nbsp; {len(_all_certs)} certs · live from GitHub'
     if _gh_cert_live else
-    '<i class="fas fa-certificate"></i>&nbsp; Verified credentials'
+    f'<i class="fas fa-certificate"></i>&nbsp; {len(_all_certs)} verified credentials'
 )
 
 st.markdown(f"""
@@ -623,8 +680,8 @@ st.markdown(f"""
     <div class="gh-source-badge reveal">{_cert_badge_html}</div>
   </div>
   <div class="scroll-controls">
-    <button class="scroll-arrow-btn" data-track="cert-track" data-dir="-1" title="Scroll left">&#8249;</button>
-    <button class="scroll-arrow-btn" data-track="cert-track" data-dir="1" title="Scroll right">&#8250;</button>
+    <button class="scroll-arrow-btn" data-track="cert-track" data-dir="-1" title="Scroll left" aria-label="Scroll certifications left">&#8249;</button>
+    <button class="scroll-arrow-btn" data-track="cert-track" data-dir="1" title="Scroll right" aria-label="Scroll certifications right">&#8250;</button>
   </div>
   <div class="horiz-scroll-track" id="cert-track">
     {_cert_items_html}
@@ -695,29 +752,27 @@ with col_form:
             submitted    = st.form_submit_button("📨  Send Message", use_container_width=True)
 
         if submitted:
-            if not name or not email_input or not subject or not message:
-                st.error("Please fill in all fields.")
-            elif not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email_input):
-                st.error("Please enter a valid email address.")
-            else:
-                try:
-                    RECIPIENT   = "girinishant708@gmail.com"
-                    sender_pass = os.environ.get("GMAIL_APP_PASSWORD", "")
-                    if sender_pass:
-                        msg = MIMEMultipart()
-                        msg["From"]    = RECIPIENT
-                        msg["To"]      = RECIPIENT
-                        msg["Subject"] = f"[Portfolio] {subject} — from {name}"
-                        body = f"Name: {name}\nEmail: {email_input}\n\nMessage:\n{message}"
-                        msg.attach(MIMEText(body, "plain"))
-                        with smtplib.SMTP("smtp.gmail.com", 587) as srv:
-                            srv.starttls()
-                            srv.login(RECIPIENT, sender_pass)
-                            srv.sendmail(RECIPIENT, RECIPIENT, msg.as_string())
-                except Exception:
-                    pass
+          if not name or not email_input or not subject or not message:
+            st.error("Please fill in all fields.")
+          elif not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email_input):
+            st.error("Please enter a valid email address.")
+          else:
+            try:
+              formspree_url = "https://formspree.io/f/xkjjjkgz"  # Replace with your actual Formspree ID
+              payload = {
+                "name": name,
+                "email": email_input,
+                "subject": subject,
+                "message": message
+              }
+              response = requests.post(formspree_url, json=payload, timeout=10)
+              if response.status_code == 200:
                 st.session_state.contact_sent = True
                 st.rerun()
+              else:
+                st.error("Failed to send message via Formspree. Please try again.")
+            except Exception as e:
+              st.error(f"An error occurred: {e}")
 
 with col_info:
     st.markdown(f"""
@@ -793,7 +848,7 @@ st.markdown(f"""
     </a>
   </div>
   Built with <span style="color:#ef4444;">♥</span> using <strong>Streamlit</strong> &nbsp;·&nbsp;
-  <strong>Nishant Giri</strong> &copy; 2025
+  <strong>Nishant Giri</strong> &copy; 2026
 </div>
 
 <!-- Back to top -->
@@ -806,4 +861,9 @@ st.markdown(f"""
 # JavaScript: Scroll effects, nav active, typing, particles
 # Injected via st.html() so scripts actually execute.
 # ─────────────────────────────────────────────────────────────
-st.html(PAGE_SCRIPT, unsafe_allow_javascript=True)
+
+
+try:
+    st.html(PAGE_SCRIPT, unsafe_allow_javascript=True)
+except TypeError:
+    components.html(PAGE_SCRIPT, height=0)
